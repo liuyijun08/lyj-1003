@@ -98,3 +98,46 @@ export interface ParamConfig {
   step: number;
   color: string;
 }
+
+export type ChangeOrderStatus = "draft" | "pending" | "approved" | "rejected";
+
+export type ParamChangeType = "temperature" | "pressure" | "ratio" | "reactionTime";
+
+export interface ParamChange {
+  key: keyof ExperimentParams;
+  label: string;
+  oldValue: number;
+  newValue: number;
+  unit: string;
+  changeType: ParamChangeType;
+}
+
+export type ApprovalAction = "submit" | "approve" | "reject" | "modify";
+
+export interface ApprovalRecord {
+  id: string;
+  action: ApprovalAction;
+  operator: string;
+  timestamp: number;
+  note: string;
+}
+
+export interface ExperimentChangeOrder {
+  id: string;
+  orderNo: string;
+  sourceResultId: string;
+  sourceResultName: string;
+  originalParams: ExperimentParams;
+  modifiedParams: ExperimentParams;
+  paramChanges: ParamChange[];
+  changeReason: string;
+  temperaturePressureChangeReason: string;
+  status: ChangeOrderStatus;
+  createdBy: string;
+  createdAt: number;
+  approver: string;
+  approvedAt?: number;
+  approvalNote: string;
+  auditTrail: ApprovalRecord[];
+  priority: Priority;
+}

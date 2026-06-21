@@ -1,12 +1,13 @@
-import { Beaker, Zap } from "lucide-react";
+import { Beaker, Zap, FileText } from "lucide-react";
 import { ControlPanel } from "@/components/ControlPanel/ControlPanel";
 import { ExperimentChart } from "@/components/Chart/ExperimentChart";
 import { RankingList } from "@/components/Ranking/RankingList";
 import { ComparisonPanel } from "@/components/Comparison/ComparisonPanel";
 import { QualityEventLedger } from "@/components/Ledger/QualityEventLedger";
+import { ChangeOrderList } from "@/components/ChangeOrder/ChangeOrderList";
 import { useState } from "react";
 
-type RightPanel = "ranking" | "ledger";
+type RightPanel = "ranking" | "ledger" | "changeOrder";
 
 export default function Home() {
   const [rightPanel, setRightPanel] = useState<RightPanel>("ranking");
@@ -30,7 +31,7 @@ export default function Home() {
           <div className="flex bg-lab-panel-light rounded-lg border border-lab-border overflow-hidden">
             <button
               onClick={() => setRightPanel("ranking")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
                 rightPanel === "ranking"
                   ? "bg-lab-cyan/20 text-lab-cyan"
                   : "text-lab-text-muted hover:text-lab-text-dim"
@@ -40,13 +41,24 @@ export default function Home() {
             </button>
             <button
               onClick={() => setRightPanel("ledger")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
                 rightPanel === "ledger"
                   ? "bg-lab-cyan/20 text-lab-cyan"
                   : "text-lab-text-muted hover:text-lab-text-dim"
               }`}
             >
               质量事件台账
+            </button>
+            <button
+              onClick={() => setRightPanel("changeOrder")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+                rightPanel === "changeOrder"
+                  ? "bg-lab-cyan/20 text-lab-cyan"
+                  : "text-lab-text-muted hover:text-lab-text-dim"
+              }`}
+            >
+              <FileText size={12} />
+              实验变更单
             </button>
           </div>
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border">
@@ -65,7 +77,13 @@ export default function Home() {
           <ExperimentChart />
         </div>
 
-        {rightPanel === "ranking" ? <RankingList /> : <QualityEventLedger />}
+        {rightPanel === "ranking" ? (
+          <RankingList />
+        ) : rightPanel === "ledger" ? (
+          <QualityEventLedger />
+        ) : (
+          <ChangeOrderList />
+        )}
       </main>
     </div>
   );

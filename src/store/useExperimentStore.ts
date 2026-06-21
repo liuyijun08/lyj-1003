@@ -13,6 +13,12 @@ import type {
   QualityEvent,
   EventLevel,
   EventStatus,
+  ExperimentChangeOrder,
+  ChangeOrderStatus,
+  ParamChange,
+  ParamChangeType,
+  ApprovalRecord,
+  ApprovalAction,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
@@ -214,6 +220,30 @@ interface ExperimentState {
   getUniqueHandlers: () => string[];
   getOverdueEventCount: () => number;
   getEventStats: () => { total: number; open: number; inProgress: number; resolved: number; overdue: number; escalated: number };
+
+  changeOrders: ExperimentChangeOrder[];
+  currentChangeOrder: ExperimentChangeOrder | null;
+  changeOrderFilterStatus: ChangeOrderStatus | null;
+  changeOrderFilterPriority: Priority | null;
+  changeOrderSearchKeyword: string;
+
+  createChangeOrderFromResult: (resultId: string, createdBy: string) => ExperimentChangeOrder;
+  updateChangeOrderParams: (orderId: string, key: keyof ExperimentParams, value: number) => void;
+  updateChangeOrderReason: (orderId: string, reason: string) => void;
+  updateChangeOrderTempPressureReason: (orderId: string, reason: string) => void;
+  submitChangeOrder: (orderId: string, operator: string, note?: string) => void;
+  approveChangeOrder: (orderId: string, approver: string, note?: string) => void;
+  rejectChangeOrder: (orderId: string, approver: string, note?: string) => void;
+  deleteChangeOrder: (orderId: string) => void;
+  setCurrentChangeOrder: (order: ExperimentChangeOrder | null) => void;
+  setChangeOrderFilterStatus: (status: ChangeOrderStatus | null) => void;
+  setChangeOrderFilterPriority: (priority: Priority | null) => void;
+  setChangeOrderSearchKeyword: (keyword: string) => void;
+  clearChangeOrderFilters: () => void;
+  getFilteredChangeOrders: () => ExperimentChangeOrder[];
+  getChangeOrderStats: () => { total: number; draft: number; pending: number; approved: number; rejected: number };
+  hasTemperaturePressureChange: (order: ExperimentChangeOrder) => boolean;
+  hasRatioChange: (order: ExperimentChangeOrder) => boolean;
 }
 
 const defaultParams = PRESETS[0].params;
@@ -251,6 +281,12 @@ export const useExperimentStore = create<ExperimentState>()(
       eventFilterStatus: null,
       eventFilterHandler: "",
       eventSearchKeyword: "",
+
+      changeOrders: [],
+      currentChangeOrder: null,
+      changeOrderFilterStatus: null,
+      changeOrderFilterPriority: null,
+      changeOrderSearchKeyword: "",
 
       setParam: (key, value) => {
         const state = get();
@@ -886,10 +922,341 @@ export const useExperimentStore = create<ExperimentState>()(
           escalated: events.filter((e) => e.status === "escalated").length,
         };
       },
+
+      hasTemperaturePressureChange: (order) => {
+        return order.paramChanges.some(
+          (c) => c.changeType === "temperature" || c.changeType === "pressure"
+        );
+      },
+
+      hasRatioChange: (order) => {
+        return order.paramChanges.some((c) => c.changeType === "ratio");
+      },
+
+      createChangeOrderFromResult: (resultId, createdBy) => {
+        const state = get();
+        const result = state.savedResults.find((r) => r.id === resultId);
+        if (!result) throw new Error("Result not found");
+
+        const id = `co_${Date.now()}`;
+        const date = new Date();
+        const orderNo = `CO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
+
+        const auditRecord: ApprovalRecord = {
+          id: `ar_${Date.now()}`,
+          action: "submit" as ApprovalAction,
+          operator: createdBy,
+          timestamp: Date.now(),
+          note: "创建变更单",
+        };
+
+        const order: ExperimentChangeOrder = {
+          id,
+          orderNo,
+          sourceResultId: resultId,
+          sourceResultName: result.name,
+          originalParams: { ...result.params },
+          modifiedParams: { ...result.params },
+          paramChanges: [],
+          changeReason: "",
+          temperaturePressureChangeReason: "",
+          status: "draft" as ChangeOrderStatus,
+          createdBy,
+          createdAt: Date.now(),
+          approver: "",
+          approvalNote: "",
+          auditTrail: [auditRecord],
+          priority: "normal" as Priority,
+        };
+
+        set((state) => ({
+          changeOrders: [...state.changeOrders, order],
+          currentChangeOrder: order,
+        }));
+
+        return order;
+      },
+
+      updateChangeOrderParams: (orderId, key, value) => {
+        const state = get();
+        const order = state.changeOrders.find((o) => o.id === orderId);
+        if (!order || order.status !== "draft") return;
+
+        const paramConfig = PARAM_CONFIGS.find((c) => c.key === key);
+        if (!paramConfig) return;
+
+        let newModifiedParams = { ...order.modifiedParams, [key]: value };
+
+        if (isRatioKey(key)) {
+          const locked: Partial<Record<keyof ExperimentParams, boolean>> = {};
+          newModifiedParams = normalizeRatios(newModifiedParams, locked, key);
+        }
+
+        const paramChanges: ParamChange[] = [];
+        (Object.keys(newModifiedParams) as (keyof ExperimentParams)[]).forEach((k) => {
+          const config = PARAM_CONFIGS.find((c) => c.key === k);
+          if (!config) return;
+          const oldVal = order.originalParams[k];
+          const newVal = newModifiedParams[k];
+          if (Math.abs(oldVal - newVal) > 0.01) {
+            let changeType: ParamChangeType = "reactionTime";
+            if (k === "temperature") changeType = "temperature";
+            else if (k === "pressure") changeType = "pressure";
+            else if (isRatioKey(k)) changeType = "ratio";
+            paramChanges.push({
+              key: k,
+              label: config.label,
+              oldValue: oldVal,
+              newValue: newVal,
+              unit: config.unit,
+              changeType,
+            });
+          }
+        });
+
+        const hasTempPressureChange = paramChanges.some(
+          (c) => c.changeType === "temperature" || c.changeType === "pressure"
+        );
+
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  modifiedParams: newModifiedParams,
+                  paramChanges,
+                  temperaturePressureChangeReason: hasTempPressureChange
+                    ? o.temperaturePressureChangeReason
+                    : "",
+                }
+              : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? {
+                  ...state.currentChangeOrder,
+                  modifiedParams: newModifiedParams,
+                  paramChanges,
+                  temperaturePressureChangeReason: hasTempPressureChange
+                    ? state.currentChangeOrder.temperaturePressureChangeReason
+                    : "",
+                }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      updateChangeOrderReason: (orderId, reason) => {
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId ? { ...o, changeReason: reason } : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? { ...state.currentChangeOrder, changeReason: reason }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      updateChangeOrderTempPressureReason: (orderId, reason) => {
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId
+              ? { ...o, temperaturePressureChangeReason: reason }
+              : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? { ...state.currentChangeOrder, temperaturePressureChangeReason: reason }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      submitChangeOrder: (orderId, operator, note) => {
+        const state = get();
+        const order = state.changeOrders.find((o) => o.id === orderId);
+        if (!order || order.status !== "draft") return;
+
+        const auditRecord: ApprovalRecord = {
+          id: `ar_${Date.now()}`,
+          action: "submit" as ApprovalAction,
+          operator,
+          timestamp: Date.now(),
+          note: note || "提交审批",
+        };
+
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  status: "pending" as ChangeOrderStatus,
+                  auditTrail: [...o.auditTrail, auditRecord],
+                }
+              : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? {
+                  ...state.currentChangeOrder,
+                  status: "pending" as ChangeOrderStatus,
+                  auditTrail: [...state.currentChangeOrder.auditTrail, auditRecord],
+                }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      approveChangeOrder: (orderId, approver, note) => {
+        const state = get();
+        const order = state.changeOrders.find((o) => o.id === orderId);
+        if (!order || order.status !== "pending") return;
+
+        const auditRecord: ApprovalRecord = {
+          id: `ar_${Date.now()}`,
+          action: "approve" as ApprovalAction,
+          operator: approver,
+          timestamp: Date.now(),
+          note: note || "审批通过",
+        };
+
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  status: "approved" as ChangeOrderStatus,
+                  approver,
+                  approvedAt: Date.now(),
+                  approvalNote: note || o.approvalNote,
+                  auditTrail: [...o.auditTrail, auditRecord],
+                }
+              : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? {
+                  ...state.currentChangeOrder,
+                  status: "approved" as ChangeOrderStatus,
+                  approver,
+                  approvedAt: Date.now(),
+                  approvalNote: note || state.currentChangeOrder.approvalNote,
+                  auditTrail: [...state.currentChangeOrder.auditTrail, auditRecord],
+                }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      rejectChangeOrder: (orderId, approver, note) => {
+        const state = get();
+        const order = state.changeOrders.find((o) => o.id === orderId);
+        if (!order || order.status !== "pending") return;
+
+        const auditRecord: ApprovalRecord = {
+          id: `ar_${Date.now()}`,
+          action: "reject" as ApprovalAction,
+          operator: approver,
+          timestamp: Date.now(),
+          note: note || "审批驳回",
+        };
+
+        set((state) => ({
+          changeOrders: state.changeOrders.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  status: "rejected" as ChangeOrderStatus,
+                  approver,
+                  approvalNote: note || o.approvalNote,
+                  auditTrail: [...o.auditTrail, auditRecord],
+                }
+              : o
+          ),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? {
+                  ...state.currentChangeOrder,
+                  status: "rejected" as ChangeOrderStatus,
+                  approver,
+                  approvalNote: note || state.currentChangeOrder.approvalNote,
+                  auditTrail: [...state.currentChangeOrder.auditTrail, auditRecord],
+                }
+              : state.currentChangeOrder,
+        }));
+      },
+
+      deleteChangeOrder: (orderId) => {
+        set((state) => ({
+          changeOrders: state.changeOrders.filter((o) => o.id !== orderId),
+          currentChangeOrder:
+            state.currentChangeOrder?.id === orderId
+              ? null
+              : state.currentChangeOrder,
+        }));
+      },
+
+      setCurrentChangeOrder: (order) => {
+        set({ currentChangeOrder: order });
+      },
+
+      setChangeOrderFilterStatus: (status) => {
+        set({ changeOrderFilterStatus: status });
+      },
+
+      setChangeOrderFilterPriority: (priority) => {
+        set({ changeOrderFilterPriority: priority });
+      },
+
+      setChangeOrderSearchKeyword: (keyword) => {
+        set({ changeOrderSearchKeyword: keyword });
+      },
+
+      clearChangeOrderFilters: () => {
+        set({
+          changeOrderFilterStatus: null,
+          changeOrderFilterPriority: null,
+          changeOrderSearchKeyword: "",
+        });
+      },
+
+      getFilteredChangeOrders: () => {
+        const state = get();
+        let orders = state.changeOrders;
+
+        if (state.changeOrderFilterStatus) {
+          orders = orders.filter((o) => o.status === state.changeOrderFilterStatus);
+        }
+
+        if (state.changeOrderFilterPriority) {
+          orders = orders.filter((o) => o.priority === state.changeOrderFilterPriority);
+        }
+
+        const keyword = state.changeOrderSearchKeyword.trim().toLowerCase();
+        if (keyword) {
+          orders = orders.filter((o) =>
+            o.orderNo.toLowerCase().includes(keyword) ||
+            o.sourceResultName.toLowerCase().includes(keyword) ||
+            o.createdBy.toLowerCase().includes(keyword) ||
+            o.changeReason.toLowerCase().includes(keyword)
+          );
+        }
+
+        return [...orders].sort((a, b) => b.createdAt - a.createdAt);
+      },
+
+      getChangeOrderStats: () => {
+        const state = get();
+        const orders = state.changeOrders;
+        return {
+          total: orders.length,
+          draft: orders.filter((o) => o.status === "draft").length,
+          pending: orders.filter((o) => o.status === "pending").length,
+          approved: orders.filter((o) => o.status === "approved").length,
+          rejected: orders.filter((o) => o.status === "rejected").length,
+        };
+      },
     }),
     {
       name: "experiment-storage",
-      version: 6,
+      version: 7,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
@@ -901,6 +1268,11 @@ export const useExperimentStore = create<ExperimentState>()(
           searchKeyword?: string;
           currentCurve?: CurvePoint[];
           currentAnomalies?: number[];
+          changeOrders?: ExperimentChangeOrder[];
+          currentChangeOrder?: ExperimentChangeOrder | null;
+          changeOrderFilterStatus?: ChangeOrderStatus | null;
+          changeOrderFilterPriority?: Priority | null;
+          changeOrderSearchKeyword?: string;
         };
         if (version < 1 && state.savedResults) {
           state.savedResults = state.savedResults.map((r) => ({
@@ -952,6 +1324,13 @@ export const useExperimentStore = create<ExperimentState>()(
           (state as Record<string, unknown>).eventFilterHandler = "";
           (state as Record<string, unknown>).eventSearchKeyword = "";
         }
+        if (version < 7) {
+          (state as Record<string, unknown>).changeOrders = [];
+          (state as Record<string, unknown>).currentChangeOrder = null;
+          (state as Record<string, unknown>).changeOrderFilterStatus = null;
+          (state as Record<string, unknown>).changeOrderFilterPriority = null;
+          (state as Record<string, unknown>).changeOrderSearchKeyword = "";
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
@@ -967,6 +1346,11 @@ export const useExperimentStore = create<ExperimentState>()(
           eventFilterStatus: EventStatus | null;
           eventFilterHandler: string;
           eventSearchKeyword: string;
+          changeOrders: ExperimentChangeOrder[];
+          currentChangeOrder: ExperimentChangeOrder | null;
+          changeOrderFilterStatus: ChangeOrderStatus | null;
+          changeOrderFilterPriority: Priority | null;
+          changeOrderSearchKeyword: string;
         };
       },
       partialize: (state) => ({
@@ -984,6 +1368,11 @@ export const useExperimentStore = create<ExperimentState>()(
         eventFilterStatus: state.eventFilterStatus,
         eventFilterHandler: state.eventFilterHandler,
         eventSearchKeyword: state.eventSearchKeyword,
+        changeOrders: state.changeOrders,
+        currentChangeOrder: state.currentChangeOrder,
+        changeOrderFilterStatus: state.changeOrderFilterStatus,
+        changeOrderFilterPriority: state.changeOrderFilterPriority,
+        changeOrderSearchKeyword: state.changeOrderSearchKeyword,
       }),
     }
   )
