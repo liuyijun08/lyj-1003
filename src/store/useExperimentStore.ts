@@ -6,9 +6,71 @@ import type {
   SortField,
   SortOrder,
 } from "@/types";
-import { PRESETS, CURVE_COLORS } from "@/data/presets";
+import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
 import { detectAnomalies, getAnomalyNote } from "@/utils/anomalyDetector";
+
+const RATIO_KEYS: (keyof ExperimentParams)[] = ["ratioA", "ratioB", "ratioC"];
+
+function isRatioKey(key: keyof ExperimentParams): boolean {
+  return RATIO_KEYS.includes(key);
+}
+
+function clampRatioParams(
+  params: ExperimentParams,
+  locked: Partial<Record<keyof ExperimentParams, boolean>>,
+  changedKey: keyof ExperimentParams
+): ExperimentParams {
+  const result = { ...params };
+  const totalRatio = RATIO_KEYS.reduce((sum, k) => sum + result[k], 0);
+
+  if (totalRatio <= 100) return result;
+
+  const unlockedKeys = RATIO_KEYS.filter((k) => k !== changedKey && !locked[k]);
+
+  if (unlockedKeys.length === 0) {
+    const ratioConfigs = PARAM_CONFIGS.filter((c) => c.key === changedKey)[0];
+    const maxAllowed = 100 - RATIO_KEYS.filter((k) => k !== changedKey).reduce((sum, k) => sum + result[k], 0);
+    result[changedKey] = Math.max(ratioConfigs.min, Math.min(ratioConfigs.max, maxAllowed));
+    return result;
+  }
+
+  const lockedTotal = RATIO_KEYS.filter((k) => k === changedKey || locked[k]).reduce(
+    (sum, k) => sum + result[k],
+    0
+  );
+  const remaining = Math.max(0, 100 - lockedTotal);
+  const currentUnlockedTotal = unlockedKeys.reduce((sum, k) => sum + result[k], 0);
+
+  if (currentUnlockedTotal > 0 && remaining > 0) {
+    const scale = remaining / currentUnlockedTotal;
+    for (const key of unlockedKeys) {
+      const config = PARAM_CONFIGS.find((c) => c.key === key);
+      if (config) {
+        result[key] = Math.max(config.min, result[key] * scale);
+      }
+    }
+  } else if (remaining <= 0) {
+    for (const key of unlockedKeys) {
+      const config = PARAM_CONFIGS.find((c) => c.key === key);
+      if (config) {
+        result[key] = config.min;
+      }
+    }
+  }
+
+  const finalTotal = RATIO_KEYS.reduce((sum, k) => sum + result[k], 0);
+  if (finalTotal > 100 && unlockedKeys.length > 0) {
+    const excess = finalTotal - 100;
+    const lastKey = unlockedKeys[unlockedKeys.length - 1];
+    const config = PARAM_CONFIGS.find((c) => c.key === lastKey);
+    if (config) {
+      result[lastKey] = Math.max(config.min, result[lastKey] - excess);
+    }
+  }
+
+  return result;
+}
 
 interface ExperimentState {
   params: ExperimentParams;
@@ -60,7 +122,12 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
     const state = get();
     if (state.lockedParams[key]) return;
 
-    const newParams = { ...state.params, [key]: value };
+    let newParams = { ...state.params, [key]: value };
+
+    if (isRatioKey(key)) {
+      newParams = clampRatioParams(newParams, state.lockedParams, key);
+    }
+
     const curve = generateCurve(newParams);
     const metrics = calculateMetrics(newParams, curve);
     const anomalies = detectAnomalies(curve);
@@ -80,12 +147,17 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
     if (!preset) return;
 
     const state = get();
-    const newParams = { ...preset.params };
+    let newParams = { ...preset.params };
 
     for (const key of Object.keys(state.lockedParams) as (keyof ExperimentParams)[]) {
       if (state.lockedParams[key]) {
         newParams[key] = state.params[key];
       }
+    }
+
+    const ratioTotal = RATIO_KEYS.reduce((sum, k) => sum + newParams[k], 0);
+    if (ratioTotal > 100) {
+      newParams = clampRatioParams(newParams, state.lockedParams, "ratioA");
     }
 
     const curve = generateCurve(newParams);

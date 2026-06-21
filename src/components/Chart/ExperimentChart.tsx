@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Activity, AlertTriangle, Eye, EyeOff, Info } from "lucide-react";
-import type { CurvePoint, ExperimentResult } from "@/types";
+import type { CurvePoint } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 import { getAnomalyNote } from "@/utils/anomalyDetector";
 

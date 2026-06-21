@@ -1,4 +1,4 @@
-import { Trash2, Copy, Check, AlertTriangle, Eye, EyeOff, Trophy, Medal } from "lucide-react";
+import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal } from "lucide-react";
 import type { ExperimentResult } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 
@@ -8,7 +8,7 @@ interface RankingItemProps {
 }
 
 export function RankingItem({ result, rank }: RankingItemProps) {
-  const { deleteResult, toggleComparison, comparisonIds, loadPreset, params } = useExperimentStore();
+  const { deleteResult, toggleComparison, comparisonIds } = useExperimentStore();
   const isInComparison = comparisonIds.includes(result.id);
 
   const getRankIcon = () => {
