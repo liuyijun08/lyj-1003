@@ -18,6 +18,8 @@ export type RiskTag = "low" | "medium" | "high" | "critical";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 
+export type Priority = "low" | "normal" | "high" | "urgent";
+
 export interface ExperimentResult {
   id: string;
   name: string;
@@ -35,6 +37,9 @@ export interface ExperimentResult {
   approvalStatus: ApprovalStatus;
   approvalNote: string;
   approvedAt?: number;
+  approver: string;
+  deadline: number | null;
+  priority: Priority;
 }
 
 export interface Preset {
@@ -44,7 +49,7 @@ export interface Preset {
   params: ExperimentParams;
 }
 
-export type SortField = "score" | "yieldRate" | "stability" | "createdAt";
+export type SortField = "score" | "yieldRate" | "stability" | "createdAt" | "priority" | "deadline";
 export type SortOrder = "asc" | "desc";
 
 export interface ParamConfig {

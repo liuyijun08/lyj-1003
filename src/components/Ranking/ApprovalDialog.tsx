@@ -1,6 +1,14 @@
 import { useState, useEffect } from "react";
-import { X, CheckCircle, XCircle, FileText } from "lucide-react";
-import type { ExperimentResult, ApprovalStatus } from "@/types";
+import {
+  X,
+  CheckCircle,
+  XCircle,
+  FileText,
+  User,
+  Calendar,
+  Flag,
+} from "lucide-react";
+import type { ExperimentResult, ApprovalStatus, Priority } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 
 interface ApprovalDialogProps {
@@ -15,27 +23,69 @@ const APPROVAL_STYLES: Record<ApprovalStatus, { label: string; color: string; bg
   rejected: { label: "已驳回", color: "text-lab-red", bg: "bg-lab-red/10", border: "border-lab-red/30" },
 };
 
+const PRIORITY_OPTIONS: { key: Priority; label: string; color: string; bgColor: string }[] = [
+  { key: "low", label: "低", color: "text-lab-text-dim", bgColor: "bg-lab-text-dim/10 border-lab-text-dim/30" },
+  { key: "normal", label: "普通", color: "text-lab-cyan", bgColor: "bg-lab-cyan/10 border-lab-cyan/30" },
+  { key: "high", label: "高", color: "text-lab-amber", bgColor: "bg-lab-amber/10 border-lab-amber/30" },
+  { key: "urgent", label: "紧急", color: "text-lab-red", bgColor: "bg-lab-red/10 border-lab-red/30" },
+];
+
+function formatDateForInput(ts: number | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseDateToTimestamp(s: string): number | null {
+  if (!s) return null;
+  const t = Date.parse(s);
+  return isNaN(t) ? null : t;
+}
+
 export function ApprovalDialog({ open, result, onClose }: ApprovalDialogProps) {
-  const { approveResult, rejectResult } = useExperimentStore();
+  const { approveResult, rejectResult, updateResultMeta } = useExperimentStore();
   const [approvalNote, setApprovalNote] = useState("");
   const [action, setAction] = useState<"approve" | "reject" | null>(null);
+  const [approver, setApprover] = useState("");
+  const [deadlineStr, setDeadlineStr] = useState("");
+  const [priority, setPriority] = useState<Priority>("normal");
 
   useEffect(() => {
     if (open && result) {
       setApprovalNote(result.approvalNote || "");
       setAction(null);
+      setApprover(result.approver || "");
+      setDeadlineStr(formatDateForInput(result.deadline));
+      setPriority(result.priority || "normal");
     }
   }, [open, result]);
 
+  const persistMeta = () => {
+    if (!result) return;
+    updateResultMeta(result.id, {
+      approver: approver.trim(),
+      deadline: parseDateToTimestamp(deadlineStr),
+      priority,
+    });
+  };
+
   const handleApprove = () => {
     if (!result) return;
+    persistMeta();
     approveResult(result.id, approvalNote.trim());
     onClose();
   };
 
   const handleReject = () => {
     if (!result) return;
+    persistMeta();
     rejectResult(result.id, approvalNote.trim());
+    onClose();
+  };
+
+  const handleMetaSaveOnly = () => {
+    persistMeta();
     onClose();
   };
 
@@ -55,7 +105,7 @@ export function ApprovalDialog({ open, result, onClose }: ApprovalDialogProps) {
       role="presentation"
     >
       <div
-        className="w-[440px] max-w-[90vw] lab-panel p-6 animate-slide-in"
+        className="w-[480px] max-w-[90vw] max-h-[90vh] overflow-y-auto lab-panel p-6 animate-slide-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -96,12 +146,74 @@ export function ApprovalDialog({ open, result, onClose }: ApprovalDialogProps) {
                 <span className="ml-1 font-mono text-lab-amber">{result.stability}</span>
               </div>
             </div>
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
               <span
                 className={`text-[10px] font-medium px-2 py-0.5 rounded border ${APPROVAL_STYLES[result.approvalStatus].color} ${APPROVAL_STYLES[result.approvalStatus].bg} ${APPROVAL_STYLES[result.approvalStatus].border}`}
               >
                 {APPROVAL_STYLES[result.approvalStatus].label}
               </span>
+              {result.batch && (
+                <span className="text-[10px] font-mono text-lab-text-dim bg-lab-panel/50 px-1.5 py-0.5 rounded">
+                  {result.batch}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-lab-text-muted mb-1.5 block flex items-center gap-1">
+                <User size={10} />
+                审批人
+              </label>
+              <input
+                type="text"
+                value={approver}
+                onChange={(e) => setApprover(e.target.value)}
+                placeholder="姓名或工号"
+                className="w-full px-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
+                           text-lab-text text-sm placeholder:text-lab-text-muted
+                           focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
+                           transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-lab-text-muted mb-1.5 block flex items-center gap-1">
+                <Calendar size={10} />
+                截止时间
+              </label>
+              <input
+                type="datetime-local"
+                value={deadlineStr}
+                onChange={(e) => setDeadlineStr(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
+                           text-lab-text text-sm placeholder:text-lab-text-muted
+                           focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
+                           transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-lab-text-muted mb-2 flex items-center gap-1">
+              <Flag size={10} />
+              优先级
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {PRIORITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setPriority(opt.key)}
+                  className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${
+                    priority === opt.key
+                      ? `${opt.bgColor} ${opt.color} ring-1 ring-current/30`
+                      : "bg-lab-panel-light border-lab-border text-lab-text-dim hover:border-lab-text-muted"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -114,7 +226,7 @@ export function ApprovalDialog({ open, result, onClose }: ApprovalDialogProps) {
               value={approvalNote}
               onChange={(e) => setApprovalNote(e.target.value)}
               placeholder="请输入审批意见或备注信息..."
-              rows={4}
+              rows={3}
               className="w-full px-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
                          text-lab-text text-sm placeholder:text-lab-text-muted
                          focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
@@ -131,27 +243,26 @@ export function ApprovalDialog({ open, result, onClose }: ApprovalDialogProps) {
           )}
         </div>
 
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="flex-1 lab-btn"
-          >
-            取消
+        <div className="flex gap-2 mt-6">
+          <button onClick={handleMetaSaveOnly} className="px-4 lab-btn text-xs">
+            仅保存信息
           </button>
-          <button
-            onClick={handleReject}
-            className="flex-1 lab-btn-danger flex items-center justify-center gap-1.5"
-          >
-            <XCircle size={14} />
-            驳回
-          </button>
-          <button
-            onClick={handleApprove}
-            className="flex-1 lab-btn-success flex items-center justify-center gap-1.5"
-          >
-            <CheckCircle size={14} />
-            通过
-          </button>
+          <div className="flex-1 flex gap-2">
+            <button
+              onClick={handleReject}
+              className="flex-1 lab-btn-danger flex items-center justify-center gap-1.5 text-xs"
+            >
+              <XCircle size={13} />
+              驳回
+            </button>
+            <button
+              onClick={handleApprove}
+              className="flex-1 lab-btn-success flex items-center justify-center gap-1.5 text-xs"
+            >
+              <CheckCircle size={13} />
+              通过
+            </button>
+          </div>
         </div>
       </div>
     </div>

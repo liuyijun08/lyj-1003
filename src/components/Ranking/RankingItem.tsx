@@ -1,6 +1,23 @@
 import { useState } from "react";
-import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle, Tag, FileText, Clock, UserCheck } from "lucide-react";
-import type { ExperimentResult, RiskTag, ApprovalStatus } from "@/types";
+import {
+  Trash2,
+  Copy,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  Trophy,
+  Medal,
+  CheckCircle,
+  XCircle,
+  Tag,
+  FileText,
+  Clock,
+  UserCheck,
+  User,
+  Calendar,
+  AlertOctagon,
+} from "lucide-react";
+import type { ExperimentResult, RiskTag, ApprovalStatus, Priority } from "@/types";
 import { useExperimentStore, validateRatios } from "@/store/useExperimentStore";
 import { ApprovalDialog } from "./ApprovalDialog";
 
@@ -17,9 +34,28 @@ const APPROVAL_STATUS_STYLES: Record<ApprovalStatus, { label: string; color: str
   rejected: { label: "驳回", color: "text-lab-red", bg: "bg-lab-red/10 border-lab-red/30", icon: <XCircle size={10} /> },
 };
 
+const PRIORITY_STYLES: Record<Priority, { label: string; color: string; bg: string; border: string; dot: string }> = {
+  low: { label: "低", color: "text-lab-text-dim", bg: "bg-lab-text-dim/10", border: "border-lab-text-dim/30", dot: "bg-lab-text-dim" },
+  normal: { label: "普通", color: "text-lab-cyan", bg: "bg-lab-cyan/10", border: "border-lab-cyan/30", dot: "bg-lab-cyan" },
+  high: { label: "高", color: "text-lab-amber", bg: "bg-lab-amber/10", border: "border-lab-amber/30", dot: "bg-lab-amber" },
+  urgent: { label: "紧急", color: "text-lab-red", bg: "bg-lab-red/10", border: "border-lab-red/30", dot: "bg-lab-red animate-pulse" },
+};
+
 interface RankingItemProps {
   result: ExperimentResult;
   rank: number;
+}
+
+function formatDeadline(ts: number | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function isOverdue(ts: number | null): boolean {
+  if (!ts) return false;
+  return ts < Date.now();
 }
 
 export function RankingItem({ result, rank }: RankingItemProps) {
@@ -28,6 +64,7 @@ export function RankingItem({ result, rank }: RankingItemProps) {
   const isInComparison = comparisonIds.includes(result.id);
   const ratioValidation = validateRatios(result.params);
   const ratioTotal = result.params.ratioA + result.params.ratioB + result.params.ratioC;
+  const overdue = result.approvalStatus === "pending" && isOverdue(result.deadline);
 
   const getRankIcon = () => {
     if (rank === 1) return <Trophy size={16} className="text-lab-amber" />;
@@ -37,6 +74,7 @@ export function RankingItem({ result, rank }: RankingItemProps) {
   };
 
   const getRankBg = () => {
+    if (overdue) return "bg-lab-red/8 border-lab-red/40";
     if (rank === 1) return "bg-lab-amber/10 border-lab-amber/30";
     if (rank === 2) return "bg-lab-text-dim/5 border-lab-text-dim/20";
     if (rank === 3) return "bg-lab-amber/5 border-lab-amber/20";
@@ -50,11 +88,24 @@ export function RankingItem({ result, rank }: RankingItemProps) {
     useExperimentStore.getState().recalculate();
   };
 
+  const daysUntilDeadline = (() => {
+    if (!result.deadline) return null;
+    const diff = result.deadline - Date.now();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    if (overdue) {
+      return Math.abs(hours) < 24
+        ? `逾期 ${Math.abs(hours)} 小时`
+        : `逾期 ${Math.floor(Math.abs(hours) / 24)} 天`;
+    }
+    if (hours < 24) return `${hours} 小时后截止`;
+    return `${Math.floor(hours / 24)} 天后截止`;
+  })();
+
   return (
     <div
       className={`p-3 rounded-lg border transition-all duration-200 animate-slide-in ${getRankBg()} ${
         isInComparison ? "ring-1 ring-lab-cyan/50" : ""
-      }`}
+      } ${overdue ? "shadow-[0_0_0_1px_rgba(239,68,68,0.2)]" : ""}`}
     >
       <div className="flex items-start gap-3">
         <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lab-panel border border-lab-border flex-shrink-0">
@@ -68,6 +119,13 @@ export function RankingItem({ result, rank }: RankingItemProps) {
               style={{ backgroundColor: result.color, boxShadow: `0 0 6px ${result.color}60` }}
             />
             <span className="font-medium text-sm text-lab-text truncate">{result.name}</span>
+            <span
+              className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded border ${PRIORITY_STYLES[result.priority].color} ${PRIORITY_STYLES[result.priority].bg} ${PRIORITY_STYLES[result.priority].border}`}
+              title={`优先级: ${PRIORITY_STYLES[result.priority].label}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_STYLES[result.priority].dot}`} />
+              {PRIORITY_STYLES[result.priority].label}
+            </span>
             {result.anomalyPoints.length > 0 && (
               <span
                 className="text-xs text-lab-amber flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-lab-amber/10"
@@ -75,6 +133,15 @@ export function RankingItem({ result, rank }: RankingItemProps) {
               >
                 <AlertTriangle size={10} />
                 {result.anomalyPoints.length}
+              </span>
+            )}
+            {overdue && (
+              <span
+                className="text-xs text-lab-red flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-lab-red/10 font-medium animate-pulse"
+                title={daysUntilDeadline || ""}
+              >
+                <AlertOctagon size={10} />
+                逾期
               </span>
             )}
           </div>
@@ -92,11 +159,43 @@ export function RankingItem({ result, rank }: RankingItemProps) {
               {RISK_TAG_STYLES[result.riskTag].label}
             </span>
             <span
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${APPROVAL_STATUS_STYLES[result.approvalStatus].color} ${APPROVAL_STATUS_STYLES[result.approvalStatus].bg}`}
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${
+                overdue
+                  ? "border-lab-red/30 bg-lab-red/10 text-lab-red"
+                  : `${APPROVAL_STATUS_STYLES[result.approvalStatus].color} ${APPROVAL_STATUS_STYLES[result.approvalStatus].bg}`
+              }`}
             >
-              {APPROVAL_STATUS_STYLES[result.approvalStatus].icon}
-              {APPROVAL_STATUS_STYLES[result.approvalStatus].label}
+              {overdue ? <AlertOctagon size={10} /> : APPROVAL_STATUS_STYLES[result.approvalStatus].icon}
+              {overdue ? "逾期未审" : APPROVAL_STATUS_STYLES[result.approvalStatus].label}
             </span>
+            {(result.approver || result.deadline) && (
+              <div className="flex items-center gap-1.5 flex-wrap w-full mt-1">
+                {result.approver && (
+                  <span className="text-[10px] text-lab-text-dim bg-lab-panel-light/70 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                    <User size={9} />
+                    {result.approver}
+                  </span>
+                )}
+                {result.deadline && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
+                      overdue
+                        ? "bg-lab-red/10 text-lab-red border border-lab-red/20 font-medium"
+                        : daysUntilDeadline?.startsWith("1 天") || daysUntilDeadline?.endsWith("小时后截止")
+                          ? "bg-lab-amber/10 text-lab-amber border border-lab-amber/20"
+                          : "bg-lab-panel-light/70 text-lab-text-dim"
+                    }`}
+                    title={`截止: ${formatDeadline(result.deadline)}${daysUntilDeadline ? ` · ${daysUntilDeadline}` : ""}`}
+                  >
+                    <Calendar size={9} />
+                    {formatDeadline(result.deadline)}
+                    {daysUntilDeadline && (
+                      <span className="opacity-75 ml-0.5">({daysUntilDeadline})</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mb-2">
@@ -267,16 +366,18 @@ export function RankingItem({ result, rank }: RankingItemProps) {
         <button
           onClick={() => setApprovalDialogOpen(true)}
           className={`flex-1 py-1 text-xs rounded border transition-colors flex items-center justify-center gap-1 ${
-            result.approvalStatus === "approved"
-              ? "bg-lab-green/20 text-lab-green border-lab-green/30"
-              : result.approvalStatus === "rejected"
-                ? "bg-lab-red/20 text-lab-red border-lab-red/30"
-                : "text-lab-amber hover:bg-lab-amber/10 hover:text-lab-amber border-lab-amber/30"
+            overdue
+              ? "bg-lab-red/20 text-lab-red border-lab-red/30"
+              : result.approvalStatus === "approved"
+                ? "bg-lab-green/20 text-lab-green border-lab-green/30"
+                : result.approvalStatus === "rejected"
+                  ? "bg-lab-red/20 text-lab-red border-lab-red/30"
+                  : "text-lab-amber hover:bg-lab-amber/10 hover:text-lab-amber border-lab-amber/30"
           }`}
           title="审批"
         >
-          {result.approvalStatus === "pending" ? <Clock size={12} /> : <UserCheck size={12} />}
-          审批
+          {overdue ? <AlertOctagon size={12} /> : result.approvalStatus === "pending" ? <Clock size={12} /> : <UserCheck size={12} />}
+          {overdue ? "逾期处理" : "审批"}
         </button>
         <button
           onClick={() => deleteResult(result.id)}

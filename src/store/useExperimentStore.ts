@@ -8,6 +8,7 @@ import type {
   SortOrder,
   RiskTag,
   ApprovalStatus,
+  Priority,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
@@ -134,6 +135,9 @@ interface SaveOptions {
   batch?: string;
   purpose?: string;
   riskTag?: RiskTag;
+  approver?: string;
+  deadline?: number | null;
+  priority?: Priority;
 }
 
 interface ExperimentState {
@@ -178,6 +182,10 @@ interface ExperimentState {
   getUniquePurposes: () => string[];
   approveResult: (id: string, note?: string) => void;
   rejectResult: (id: string, note?: string) => void;
+  updateResultMeta: (
+    id: string,
+    meta: Partial<Pick<ExperimentResult, "approver" | "deadline" | "priority">>
+  ) => void;
 }
 
 const defaultParams = PRESETS[0].params;
@@ -322,6 +330,9 @@ export const useExperimentStore = create<ExperimentState>()(
           riskTag: options?.riskTag || "medium",
           approvalStatus: "pending",
           approvalNote: "",
+          approver: options?.approver || "",
+          deadline: options?.deadline ?? null,
+          priority: options?.priority || "normal",
         };
 
         if (needRecalc) {
@@ -390,9 +401,23 @@ export const useExperimentStore = create<ExperimentState>()(
 
       getSortedResults: () => {
         const state = get();
+        const PRIORITY_RANK: Record<Priority, number> = {
+          urgent: 4,
+          high: 3,
+          normal: 2,
+          low: 1,
+        };
         return [...state.savedResults].sort((a, b) => {
           const order = state.sortOrder === "desc" ? -1 : 1;
-          return (a[state.sortField] - b[state.sortField]) * order;
+          if (state.sortField === "priority") {
+            return (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) * order;
+          }
+          if (state.sortField === "deadline") {
+            const ad = a.deadline ?? Number.MAX_SAFE_INTEGER;
+            const bd = b.deadline ?? Number.MAX_SAFE_INTEGER;
+            return (ad - bd) * order;
+          }
+          return ((a[state.sortField] as number) - (b[state.sortField] as number)) * order;
         });
       },
 
@@ -465,6 +490,12 @@ export const useExperimentStore = create<ExperimentState>()(
       getFilteredResults: () => {
         const state = get();
         const keyword = state.searchKeyword.trim().toLowerCase();
+        const PRIORITY_RANK: Record<Priority, number> = {
+          urgent: 4,
+          high: 3,
+          normal: 2,
+          low: 1,
+        };
 
         let results = state.savedResults;
 
@@ -495,7 +526,15 @@ export const useExperimentStore = create<ExperimentState>()(
 
         return [...results].sort((a, b) => {
           const order = state.sortOrder === "desc" ? -1 : 1;
-          return (a[state.sortField] - b[state.sortField]) * order;
+          if (state.sortField === "priority") {
+            return (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) * order;
+          }
+          if (state.sortField === "deadline") {
+            const ad = a.deadline ?? Number.MAX_SAFE_INTEGER;
+            const bd = b.deadline ?? Number.MAX_SAFE_INTEGER;
+            return (ad - bd) * order;
+          }
+          return ((a[state.sortField] as number) - (b[state.sortField] as number)) * order;
         });
       },
 
@@ -527,10 +566,25 @@ export const useExperimentStore = create<ExperimentState>()(
           ),
         }));
       },
+
+      updateResultMeta: (id, meta) => {
+        set((state) => ({
+          savedResults: state.savedResults.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  approver: meta.approver ?? r.approver,
+                  deadline: "deadline" in meta ? meta.deadline ?? null : r.deadline,
+                  priority: meta.priority ?? r.priority,
+                }
+              : r
+          ),
+        }));
+      },
     }),
     {
       name: "experiment-storage",
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
@@ -560,6 +614,14 @@ export const useExperimentStore = create<ExperimentState>()(
         if (version < 3) {
           state.filterBatches = [];
           state.filterPurposes = [];
+        }
+        if (version < 4 && state.savedResults) {
+          state.savedResults = state.savedResults.map((r) => ({
+            ...r,
+            approver: (r as { approver?: string }).approver || "",
+            deadline: (r as { deadline?: number | null }).deadline ?? null,
+            priority: (r as { priority?: Priority }).priority || "normal",
+          }));
         }
         return state as {
           savedResults: ExperimentResult[];

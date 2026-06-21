@@ -26,6 +26,8 @@ const SORT_OPTIONS: { key: SortField; label: string }[] = [
   { key: "score", label: "评分" },
   { key: "yieldRate", label: "产率" },
   { key: "stability", label: "稳定性" },
+  { key: "priority", label: "优先级" },
+  { key: "deadline", label: "截止" },
   { key: "createdAt", label: "时间" },
 ];
 
