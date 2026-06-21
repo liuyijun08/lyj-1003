@@ -88,8 +88,84 @@ export function RankingItem({ result, rank }: RankingItemProps) {
             </div>
           </div>
 
-          <div className="text-xs text-lab-text-muted truncate font-mono">
+          <div className="text-xs text-lab-text-muted truncate font-mono mb-2">
             {result.params.temperature}°C · {result.params.pressure}MPa · {result.params.reactionTime}h
+          </div>
+
+          <div className="mb-1.5">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-lab-text-muted font-medium">原料配比</span>
+              <span
+                className={`font-mono font-semibold ${
+                  result.params.ratioA + result.params.ratioB + result.params.ratioC > 100
+                    ? "text-lab-red"
+                    : "text-lab-green"
+                }`}
+              >
+                合计 {result.params.ratioA + result.params.ratioB + result.params.ratioC}%
+              </span>
+            </div>
+            <div className="h-4 bg-lab-border rounded-full overflow-hidden flex">
+              <div
+                className="h-full flex items-center justify-center text-[9px] font-mono text-lab-bg font-semibold transition-all"
+                style={{
+                  width: `${result.params.ratioA}%`,
+                  backgroundColor: "#ffb300",
+                  minWidth: result.params.ratioA > 0 ? "18px" : "0px",
+                }}
+                title={`原料 A: ${result.params.ratioA}%`}
+              >
+                {result.params.ratioA >= 12 ? "A" : ""}
+              </div>
+              <div
+                className="h-full flex items-center justify-center text-[9px] font-mono text-white font-semibold transition-all"
+                style={{
+                  width: `${result.params.ratioB}%`,
+                  backgroundColor: "#c084fc",
+                  minWidth: result.params.ratioB > 0 ? "18px" : "0px",
+                }}
+                title={`原料 B: ${result.params.ratioB}%`}
+              >
+                {result.params.ratioB >= 12 ? "B" : ""}
+              </div>
+              <div
+                className="h-full flex items-center justify-center text-[9px] font-mono text-lab-bg font-semibold transition-all"
+                style={{
+                  width: `${result.params.ratioC}%`,
+                  backgroundColor: "#fb923c",
+                  minWidth: result.params.ratioC > 0 ? "18px" : "0px",
+                }}
+                title={`原料 C: ${result.params.ratioC}%`}
+              >
+                {result.params.ratioC >= 12 ? "C" : ""}
+              </div>
+            </div>
+            <div className="flex justify-between text-[10px] font-mono mt-1 gap-2">
+              <span className="flex items-center gap-1 truncate">
+                <span
+                  className="w-2 h-2 rounded-sm inline-block flex-shrink-0"
+                  style={{ backgroundColor: "#ffb300" }}
+                />
+                <span className="text-lab-text-muted truncate">A</span>
+                <span className="text-lab-amber tabular-nums">{result.params.ratioA}%</span>
+              </span>
+              <span className="flex items-center gap-1 truncate">
+                <span
+                  className="w-2 h-2 rounded-sm inline-block flex-shrink-0"
+                  style={{ backgroundColor: "#c084fc" }}
+                />
+                <span className="text-lab-text-muted truncate">B</span>
+                <span className="text-[#c084fc] tabular-nums">{result.params.ratioB}%</span>
+              </span>
+              <span className="flex items-center gap-1 truncate">
+                <span
+                  className="w-2 h-2 rounded-sm inline-block flex-shrink-0"
+                  style={{ backgroundColor: "#fb923c" }}
+                />
+                <span className="text-lab-text-muted truncate">C</span>
+                <span className="text-[#fb923c] tabular-nums">{result.params.ratioC}%</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>

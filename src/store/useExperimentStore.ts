@@ -203,30 +203,81 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
     const id = `exp_${Date.now()}`;
     const colorIndex = state.savedResults.length % CURVE_COLORS.length;
 
-    const curveData = state.currentCurve.map((p, i) => ({
+    let savedParams = { ...state.params };
+    const ratioTotal = RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0);
+
+    if (ratioTotal > 100) {
+      savedParams = clampRatioParams(savedParams, state.lockedParams, "ratioA");
+    } else if (ratioTotal < 100) {
+      const diff = 100 - ratioTotal;
+      for (const key of RATIO_KEYS) {
+        if (!state.lockedParams[key]) {
+          const config = PARAM_CONFIGS.find((c) => c.key === key);
+          if (config) {
+            const maxAdd = config.max - savedParams[key];
+            const add = Math.min(maxAdd, diff);
+            savedParams[key] = Math.round((savedParams[key] + add) * 100) / 100;
+            if (Math.abs(RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0) - 100) < 0.01) break;
+          }
+        }
+      }
+    }
+
+    const adjustedRatioTotal = RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0);
+    if (Math.abs(adjustedRatioTotal - 100) > 0.01) {
+      const finalDiff = 100 - adjustedRatioTotal;
+      const unlockedRatios = RATIO_KEYS.filter((k) => !state.lockedParams[k]);
+      if (unlockedRatios.length > 0) {
+        const target = unlockedRatios[unlockedRatios.length - 1];
+        savedParams[target] = Math.round((savedParams[target] + finalDiff) * 100) / 100;
+      }
+    }
+
+    const needRecalc =
+      savedParams.ratioA !== state.params.ratioA ||
+      savedParams.ratioB !== state.params.ratioB ||
+      savedParams.ratioC !== state.params.ratioC;
+
+    const curve = needRecalc ? generateCurve(savedParams) : state.currentCurve;
+    const metrics = needRecalc ? calculateMetrics(savedParams, curve) : null;
+    const anomalies = needRecalc ? detectAnomalies(curve) : state.currentAnomalies;
+
+    const curveData = curve.map((p, i) => ({
       ...p,
-      isAnomaly: state.currentAnomalies.includes(i),
-      anomalyNote: state.currentAnomalies.includes(i)
-        ? getAnomalyNote(i, state.currentCurve)
+      isAnomaly: anomalies.includes(i),
+      anomalyNote: anomalies.includes(i)
+        ? getAnomalyNote(i, curve)
         : undefined,
     }));
 
     const result: ExperimentResult = {
       id,
       name: name || `实验 ${state.savedResults.length + 1}`,
-      params: { ...state.params },
+      params: { ...savedParams },
       curveData,
-      score: state.currentScore,
-      yieldRate: state.currentYield,
-      stability: state.currentStability,
+      score: metrics ? metrics.score : state.currentScore,
+      yieldRate: metrics ? metrics.yieldRate : state.currentYield,
+      stability: metrics ? metrics.stability : state.currentStability,
       createdAt: Date.now(),
-      anomalyPoints: [...state.currentAnomalies],
+      anomalyPoints: [...anomalies],
       color: CURVE_COLORS[colorIndex],
     };
 
-    set({
-      savedResults: [...state.savedResults, result],
-    });
+    if (needRecalc) {
+      set({
+        params: savedParams,
+        currentCurve: curve,
+        currentAnomalies: anomalies,
+        currentScore: metrics ? metrics.score : state.currentScore,
+        currentYield: metrics ? metrics.yieldRate : state.currentYield,
+        currentStability: metrics ? metrics.stability : state.currentStability,
+        savedResults: [...state.savedResults, result],
+      });
+    } else {
+      set({
+        savedResults: [...state.savedResults, result],
+      });
+    }
   },
 
   deleteResult: (id) => {
