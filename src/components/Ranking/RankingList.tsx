@@ -1,6 +1,6 @@
-import { Trophy, ArrowUpDown, Trash2, X, Layers, Filter, Search } from "lucide-react";
+import { Trophy, ArrowUpDown, Trash2, X, Layers, Filter, Search, CheckCircle, Clock, XCircle } from "lucide-react";
 import { RankingItem } from "./RankingItem";
-import type { SortField, RiskTag } from "@/types";
+import type { SortField, RiskTag, ApprovalStatus } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 
 const SORT_OPTIONS: { key: SortField; label: string }[] = [
@@ -18,6 +18,13 @@ const RISK_FILTER_OPTIONS: { key: RiskTag | "all"; label: string; color: string 
   { key: "critical", label: "极高", color: "text-lab-red" },
 ];
 
+const APPROVAL_FILTER_OPTIONS: { key: ApprovalStatus | "all"; label: string; color: string; icon: React.ReactNode }[] = [
+  { key: "all", label: "全部", color: "text-lab-text-dim", icon: null },
+  { key: "pending", label: "待审", color: "text-lab-amber", icon: <Clock size={10} /> },
+  { key: "approved", label: "通过", color: "text-lab-green", icon: <CheckCircle size={10} /> },
+  { key: "rejected", label: "驳回", color: "text-lab-red", icon: <XCircle size={10} /> },
+];
+
 export function RankingList() {
   const {
     sortField,
@@ -30,6 +37,8 @@ export function RankingList() {
     clearComparison,
     filterRiskTag,
     setFilterRiskTag,
+    filterApprovalStatus,
+    setFilterApprovalStatus,
     searchKeyword,
     setSearchKeyword,
   } = useExperimentStore();
@@ -130,6 +139,31 @@ export function RankingList() {
             })}
           </div>
         </div>
+
+        <div className="flex items-center gap-2 mt-2">
+          <CheckCircle size={12} className="text-lab-text-muted flex-shrink-0" />
+          <div className="flex-1 flex gap-1 overflow-x-auto pb-0.5">
+            {APPROVAL_FILTER_OPTIONS.map((opt) => {
+              const isActive =
+                (opt.key === "all" && filterApprovalStatus === null) ||
+                opt.key === filterApprovalStatus;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setFilterApprovalStatus(opt.key === "all" ? null : (opt.key as ApprovalStatus))}
+                  className={`px-2 py-0.5 text-xs rounded whitespace-nowrap transition-colors border flex items-center gap-1 ${
+                    isActive
+                      ? `${opt.color} bg-current/10 border-current/30`
+                      : "text-lab-text-muted hover:text-lab-text-dim border-transparent"
+                  }`}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {comparisonIds.length > 0 && (
@@ -159,14 +193,18 @@ export function RankingList() {
                 ? "未找到匹配的方案"
                 : filterRiskTag
                   ? "该标签下暂无方案"
-                  : "暂无保存的方案"}
+                  : filterApprovalStatus
+                    ? "该状态下暂无方案"
+                    : "暂无保存的方案"}
             </p>
             <p className="text-xs text-lab-text-muted">
               {searchKeyword
                 ? "尝试其他关键词或清除搜索"
                 : filterRiskTag
                   ? "尝试切换其他标签筛选"
-                  : "调节参数后点击\"保存方案\""}
+                  : filterApprovalStatus
+                    ? "尝试切换其他状态筛选"
+                    : "调节参数后点击\"保存方案\""}
             </p>
           </div>
         ) : (
@@ -179,7 +217,7 @@ export function RankingList() {
       </div>
 
       <div className="px-4 py-2 border-t border-lab-border text-xs text-lab-text-muted text-center">
-        {searchKeyword || filterRiskTag
+        {searchKeyword || filterRiskTag || filterApprovalStatus
           ? `筛选结果 ${filteredResults.length} 个`
           : `共 ${filteredResults.length} 个方案`}
       </div>

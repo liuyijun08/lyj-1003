@@ -7,6 +7,7 @@ import type {
   SortField,
   SortOrder,
   RiskTag,
+  ApprovalStatus,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
@@ -148,6 +149,7 @@ interface ExperimentState {
   sortOrder: SortOrder;
   lockedParams: Partial<Record<keyof ExperimentParams, boolean>>;
   filterRiskTag: RiskTag | null;
+  filterApprovalStatus: ApprovalStatus | null;
   searchKeyword: string;
 
   setParam: (key: keyof ExperimentParams, value: number) => void;
@@ -164,8 +166,11 @@ interface ExperimentState {
   toggleAnomalyMarker: (pointIndex: number) => void;
   getSortedResults: () => ExperimentResult[];
   setFilterRiskTag: (tag: RiskTag | null) => void;
+  setFilterApprovalStatus: (status: ApprovalStatus | null) => void;
   setSearchKeyword: (keyword: string) => void;
   getFilteredResults: () => ExperimentResult[];
+  approveResult: (id: string, note?: string) => void;
+  rejectResult: (id: string, note?: string) => void;
 }
 
 const defaultParams = PRESETS[0].params;
@@ -188,6 +193,7 @@ export const useExperimentStore = create<ExperimentState>()(
       sortOrder: "desc",
       lockedParams: {},
       filterRiskTag: null,
+      filterApprovalStatus: null,
       searchKeyword: "",
 
       setParam: (key, value) => {
@@ -305,6 +311,8 @@ export const useExperimentStore = create<ExperimentState>()(
           batch: options?.batch || "",
           purpose: options?.purpose || "",
           riskTag: options?.riskTag || "medium",
+          approvalStatus: "pending",
+          approvalNote: "",
         };
 
         if (needRecalc) {
@@ -383,6 +391,10 @@ export const useExperimentStore = create<ExperimentState>()(
         set({ filterRiskTag: tag });
       },
 
+      setFilterApprovalStatus: (status) => {
+        set({ filterApprovalStatus: status });
+      },
+
       setSearchKeyword: (keyword) => {
         set({ searchKeyword: keyword });
       },
@@ -395,6 +407,10 @@ export const useExperimentStore = create<ExperimentState>()(
 
         if (state.filterRiskTag) {
           results = results.filter((r) => r.riskTag === state.filterRiskTag);
+        }
+
+        if (state.filterApprovalStatus) {
+          results = results.filter((r) => r.approvalStatus === state.filterApprovalStatus);
         }
 
         if (keyword) {
@@ -411,15 +427,45 @@ export const useExperimentStore = create<ExperimentState>()(
           return (a[state.sortField] - b[state.sortField]) * order;
         });
       },
+
+      approveResult: (id, note) => {
+        set((state) => ({
+          savedResults: state.savedResults.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  approvalStatus: "approved",
+                  approvalNote: note || r.approvalNote,
+                  approvedAt: Date.now(),
+                }
+              : r
+          ),
+        }));
+      },
+
+      rejectResult: (id, note) => {
+        set((state) => ({
+          savedResults: state.savedResults.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  approvalStatus: "rejected",
+                  approvalNote: note || r.approvalNote,
+                }
+              : r
+          ),
+        }));
+      },
     }),
     {
       name: "experiment-storage",
-      version: 1,
+      version: 2,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
           comparisonIds?: string[];
           filterRiskTag?: RiskTag | null;
+          filterApprovalStatus?: ApprovalStatus | null;
           searchKeyword?: string;
         };
         if (version < 1 && state.savedResults) {
@@ -430,10 +476,19 @@ export const useExperimentStore = create<ExperimentState>()(
             riskTag: (r as { riskTag?: RiskTag }).riskTag || "medium",
           }));
         }
+        if (version < 2 && state.savedResults) {
+          state.savedResults = state.savedResults.map((r) => ({
+            ...r,
+            approvalStatus: (r as { approvalStatus?: ApprovalStatus }).approvalStatus || "pending",
+            approvalNote: (r as { approvalNote?: string }).approvalNote || "",
+          }));
+          state.filterApprovalStatus = null;
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
           filterRiskTag: RiskTag | null;
+          filterApprovalStatus: ApprovalStatus | null;
           searchKeyword: string;
         };
       },
@@ -441,6 +496,7 @@ export const useExperimentStore = create<ExperimentState>()(
         savedResults: state.savedResults,
         comparisonIds: state.comparisonIds,
         filterRiskTag: state.filterRiskTag,
+        filterApprovalStatus: state.filterApprovalStatus,
         searchKeyword: state.searchKeyword,
       }),
     }

@@ -16,6 +16,8 @@ export interface CurvePoint {
 
 export type RiskTag = "low" | "medium" | "high" | "critical";
 
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+
 export interface ExperimentResult {
   id: string;
   name: string;
@@ -30,6 +32,9 @@ export interface ExperimentResult {
   batch: string;
   purpose: string;
   riskTag: RiskTag;
+  approvalStatus: ApprovalStatus;
+  approvalNote: string;
+  approvedAt?: number;
 }
 
 export interface Preset {

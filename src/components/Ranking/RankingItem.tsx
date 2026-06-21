@@ -1,12 +1,20 @@
-import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle, Tag, FileText } from "lucide-react";
-import type { ExperimentResult, RiskTag } from "@/types";
+import { useState } from "react";
+import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle, Tag, FileText, Clock, UserCheck } from "lucide-react";
+import type { ExperimentResult, RiskTag, ApprovalStatus } from "@/types";
 import { useExperimentStore, validateRatios } from "@/store/useExperimentStore";
+import { ApprovalDialog } from "./ApprovalDialog";
 
 const RISK_TAG_STYLES: Record<RiskTag, { label: string; color: string; bg: string }> = {
   low: { label: "低风险", color: "text-lab-green", bg: "bg-lab-green/10 border-lab-green/30" },
   medium: { label: "中风险", color: "text-lab-amber", bg: "bg-lab-amber/10 border-lab-amber/30" },
   high: { label: "高风险", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30" },
   critical: { label: "极高风险", color: "text-lab-red", bg: "bg-lab-red/10 border-lab-red/30" },
+};
+
+const APPROVAL_STATUS_STYLES: Record<ApprovalStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  pending: { label: "待审", color: "text-lab-amber", bg: "bg-lab-amber/10 border-lab-amber/30", icon: <Clock size={10} /> },
+  approved: { label: "通过", color: "text-lab-green", bg: "bg-lab-green/10 border-lab-green/30", icon: <CheckCircle size={10} /> },
+  rejected: { label: "驳回", color: "text-lab-red", bg: "bg-lab-red/10 border-lab-red/30", icon: <XCircle size={10} /> },
 };
 
 interface RankingItemProps {
@@ -16,6 +24,7 @@ interface RankingItemProps {
 
 export function RankingItem({ result, rank }: RankingItemProps) {
   const { deleteResult, toggleComparison, comparisonIds } = useExperimentStore();
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const isInComparison = comparisonIds.includes(result.id);
   const ratioValidation = validateRatios(result.params);
   const ratioTotal = result.params.ratioA + result.params.ratioB + result.params.ratioC;
@@ -82,6 +91,12 @@ export function RankingItem({ result, rank }: RankingItemProps) {
             >
               {RISK_TAG_STYLES[result.riskTag].label}
             </span>
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${APPROVAL_STATUS_STYLES[result.approvalStatus].color} ${APPROVAL_STATUS_STYLES[result.approvalStatus].bg}`}
+            >
+              {APPROVAL_STATUS_STYLES[result.approvalStatus].icon}
+              {APPROVAL_STATUS_STYLES[result.approvalStatus].label}
+            </span>
           </div>
 
           <div className="mb-2">
@@ -120,6 +135,18 @@ export function RankingItem({ result, rank }: RankingItemProps) {
               <div className="flex items-start gap-1">
                 <FileText size={10} className="mt-0.5 flex-shrink-0 text-lab-text-muted" />
                 <span className="leading-relaxed">{result.purpose}</span>
+              </div>
+            </div>
+          )}
+
+          {result.approvalNote && (
+            <div className="mb-2 text-xs text-lab-text-dim bg-lab-cyan/5 rounded px-2 py-1.5 line-clamp-2 border border-lab-cyan/20">
+              <div className="flex items-start gap-1">
+                <UserCheck size={10} className="mt-0.5 flex-shrink-0 text-lab-cyan" />
+                <span className="leading-relaxed">
+                  <span className="text-lab-cyan font-medium">审批意见：</span>
+                  {result.approvalNote}
+                </span>
               </div>
             </div>
           )}
@@ -238,6 +265,20 @@ export function RankingItem({ result, rank }: RankingItemProps) {
           加载
         </button>
         <button
+          onClick={() => setApprovalDialogOpen(true)}
+          className={`flex-1 py-1 text-xs rounded border transition-colors flex items-center justify-center gap-1 ${
+            result.approvalStatus === "approved"
+              ? "bg-lab-green/20 text-lab-green border-lab-green/30"
+              : result.approvalStatus === "rejected"
+                ? "bg-lab-red/20 text-lab-red border-lab-red/30"
+                : "text-lab-amber hover:bg-lab-amber/10 hover:text-lab-amber border-lab-amber/30"
+          }`}
+          title="审批"
+        >
+          {result.approvalStatus === "pending" ? <Clock size={12} /> : <UserCheck size={12} />}
+          审批
+        </button>
+        <button
           onClick={() => deleteResult(result.id)}
           className="p-1.5 rounded text-lab-text-muted hover:text-lab-red hover:bg-lab-red/10 transition-colors"
           title="删除"
@@ -245,6 +286,12 @@ export function RankingItem({ result, rank }: RankingItemProps) {
           <Trash2 size={12} />
         </button>
       </div>
+
+      <ApprovalDialog
+        open={approvalDialogOpen}
+        result={result}
+        onClose={() => setApprovalDialogOpen(false)}
+      />
     </div>
   );
 }
