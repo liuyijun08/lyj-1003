@@ -1,6 +1,13 @@
-import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle } from "lucide-react";
-import type { ExperimentResult } from "@/types";
+import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle, Tag, FileText } from "lucide-react";
+import type { ExperimentResult, RiskTag } from "@/types";
 import { useExperimentStore, validateRatios } from "@/store/useExperimentStore";
+
+const RISK_TAG_STYLES: Record<RiskTag, { label: string; color: string; bg: string }> = {
+  low: { label: "低风险", color: "text-lab-green", bg: "bg-lab-green/10 border-lab-green/30" },
+  medium: { label: "中风险", color: "text-lab-amber", bg: "bg-lab-amber/10 border-lab-amber/30" },
+  high: { label: "高风险", color: "text-orange-400", bg: "bg-orange-400/10 border-orange-400/30" },
+  critical: { label: "极高风险", color: "text-lab-red", bg: "bg-lab-red/10 border-lab-red/30" },
+};
 
 interface RankingItemProps {
   result: ExperimentResult;
@@ -63,6 +70,20 @@ export function RankingItem({ result, rank }: RankingItemProps) {
             )}
           </div>
 
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            {result.batch && (
+              <span className="text-[10px] font-mono text-lab-text-dim bg-lab-panel-light px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                <Tag size={10} />
+                {result.batch}
+              </span>
+            )}
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${RISK_TAG_STYLES[result.riskTag].color} ${RISK_TAG_STYLES[result.riskTag].bg}`}
+            >
+              {RISK_TAG_STYLES[result.riskTag].label}
+            </span>
+          </div>
+
           <div className="mb-2">
             <div className="flex items-center justify-between text-xs mb-1">
               <span className="text-lab-text-muted">综合评分</span>
@@ -93,6 +114,15 @@ export function RankingItem({ result, rank }: RankingItemProps) {
           <div className="text-xs text-lab-text-muted truncate font-mono mb-2">
             {result.params.temperature}°C · {result.params.pressure}MPa · {result.params.reactionTime}h
           </div>
+
+          {result.purpose && (
+            <div className="mb-2 text-xs text-lab-text-dim bg-lab-panel-light/50 rounded px-2 py-1.5 line-clamp-2">
+              <div className="flex items-start gap-1">
+                <FileText size={10} className="mt-0.5 flex-shrink-0 text-lab-text-muted" />
+                <span className="leading-relaxed">{result.purpose}</span>
+              </div>
+            </div>
+          )}
 
           <div className="mb-1.5">
             <div className="flex items-center justify-between text-xs mb-1">

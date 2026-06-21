@@ -1,6 +1,6 @@
-import { Trophy, ArrowUpDown, Trash2, X, Layers } from "lucide-react";
+import { Trophy, ArrowUpDown, Trash2, X, Layers, Filter } from "lucide-react";
 import { RankingItem } from "./RankingItem";
-import type { SortField } from "@/types";
+import type { SortField, RiskTag } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 
 const SORT_OPTIONS: { key: SortField; label: string }[] = [
@@ -10,6 +10,14 @@ const SORT_OPTIONS: { key: SortField; label: string }[] = [
   { key: "createdAt", label: "时间" },
 ];
 
+const RISK_FILTER_OPTIONS: { key: RiskTag | "all"; label: string; color: string }[] = [
+  { key: "all", label: "全部", color: "text-lab-text-dim" },
+  { key: "low", label: "低风险", color: "text-lab-green" },
+  { key: "medium", label: "中风险", color: "text-lab-amber" },
+  { key: "high", label: "高风险", color: "text-orange-400" },
+  { key: "critical", label: "极高", color: "text-lab-red" },
+];
+
 export function RankingList() {
   const {
     sortField,
@@ -17,12 +25,14 @@ export function RankingList() {
     setSortField,
     toggleSortOrder,
     clearResults,
-    getSortedResults,
+    getFilteredResults,
     comparisonIds,
     clearComparison,
+    filterRiskTag,
+    setFilterRiskTag,
   } = useExperimentStore();
 
-  const sortedResults = getSortedResults();
+  const filteredResults = getFilteredResults();
 
   return (
     <div className="w-[320px] h-full flex flex-col lab-panel overflow-hidden">
@@ -32,7 +42,7 @@ export function RankingList() {
             <Trophy size={18} className="text-lab-amber" />
             <h2 className="text-lg font-semibold text-lab-text">方案评分榜</h2>
           </div>
-          {sortedResults.length > 0 && (
+          {filteredResults.length > 0 && (
             <button
               onClick={clearResults}
               className="p-1.5 rounded text-lab-text-muted hover:text-lab-red hover:bg-lab-red/10 transition-colors"
@@ -43,7 +53,7 @@ export function RankingList() {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-3">
           <div className="flex-1 flex gap-1 overflow-x-auto pb-0.5">
             {SORT_OPTIONS.map((opt) => (
               <button
@@ -67,6 +77,30 @@ export function RankingList() {
             <ArrowUpDown size={14} className={sortOrder === "asc" ? "rotate-180" : ""} />
           </button>
         </div>
+
+        <div className="flex items-center gap-2">
+          <Filter size={12} className="text-lab-text-muted flex-shrink-0" />
+          <div className="flex-1 flex gap-1 overflow-x-auto pb-0.5">
+            {RISK_FILTER_OPTIONS.map((opt) => {
+              const isActive =
+                (opt.key === "all" && filterRiskTag === null) ||
+                opt.key === filterRiskTag;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setFilterRiskTag(opt.key === "all" ? null : (opt.key as RiskTag))}
+                  className={`px-2 py-0.5 text-xs rounded whitespace-nowrap transition-colors border ${
+                    isActive
+                      ? `${opt.color} bg-current/10 border-current/30`
+                      : "text-lab-text-muted hover:text-lab-text-dim border-transparent"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {comparisonIds.length > 0 && (
@@ -86,17 +120,21 @@ export function RankingList() {
       )}
 
       <div className="flex-1 overflow-y-auto p-4">
-        {sortedResults.length === 0 ? (
+        {filteredResults.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center py-8">
             <div className="w-16 h-16 rounded-full bg-lab-panel-light flex items-center justify-center mb-3">
               <Trophy size={28} className="text-lab-text-muted" />
             </div>
-            <p className="text-sm text-lab-text-dim mb-1">暂无保存的方案</p>
-            <p className="text-xs text-lab-text-muted">调节参数后点击"保存方案"</p>
+            <p className="text-sm text-lab-text-dim mb-1">
+              {filterRiskTag ? "该标签下暂无方案" : "暂无保存的方案"}
+            </p>
+            <p className="text-xs text-lab-text-muted">
+              {filterRiskTag ? "尝试切换其他标签筛选" : "调节参数后点击\"保存方案\""}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
-            {sortedResults.map((result, index) => (
+            {filteredResults.map((result, index) => (
               <RankingItem key={result.id} result={result} rank={index + 1} />
             ))}
           </div>
@@ -104,7 +142,7 @@ export function RankingList() {
       </div>
 
       <div className="px-4 py-2 border-t border-lab-border text-xs text-lab-text-muted text-center">
-        共 {sortedResults.length} 个方案
+        {filterRiskTag ? `筛选结果 ${filteredResults.length} 个` : `共 ${filteredResults.length} 个方案`}
       </div>
     </div>
   );

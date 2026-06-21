@@ -14,6 +14,8 @@ export interface CurvePoint {
   anomalyNote?: string;
 }
 
+export type RiskTag = "low" | "medium" | "high" | "critical";
+
 export interface ExperimentResult {
   id: string;
   name: string;
@@ -25,6 +27,9 @@ export interface ExperimentResult {
   createdAt: number;
   anomalyPoints: number[];
   color: string;
+  batch: string;
+  purpose: string;
+  riskTag: RiskTag;
 }
 
 export interface Preset {

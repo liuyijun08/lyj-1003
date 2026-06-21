@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { Save, RefreshCw, Sliders } from "lucide-react";
 import { ParameterSlider } from "./ParameterSlider";
 import { PresetSelector } from "./PresetSelector";
+import { SaveExperimentDialog } from "./SaveExperimentDialog";
 import { PARAM_CONFIGS } from "@/data/presets";
 import { useExperimentStore } from "@/store/useExperimentStore";
 
 export function ControlPanel() {
-  const { saveCurrentResult, recalculate, currentScore, currentYield, currentStability } =
+  const { recalculate, currentScore, currentYield, currentStability } =
     useExperimentStore();
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   return (
     <div className="w-[280px] h-full flex flex-col gap-4 p-4 lab-panel overflow-y-auto">
@@ -56,11 +59,16 @@ export function ControlPanel() {
           <RefreshCw size={14} />
           重新计算
         </button>
-        <button onClick={() => saveCurrentResult()} className="lab-btn-success flex-1 flex items-center justify-center gap-1.5">
+        <button onClick={() => setSaveDialogOpen(true)} className="lab-btn-success flex-1 flex items-center justify-center gap-1.5">
           <Save size={14} />
           保存方案
         </button>
       </div>
+
+      <SaveExperimentDialog
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+      />
     </div>
   );
 }
