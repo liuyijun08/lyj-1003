@@ -969,15 +969,17 @@ export const useExperimentStore = create<ExperimentState>()(
         const result = state.savedResults.find((r) => r.id === resultId);
         if (!result) throw new Error("Result not found");
 
-        const id = `co_${Date.now()}`;
+        const timestamp = Date.now();
+        const randomStr = Math.random().toString(36).substring(2, 10);
+        const id = `co_${timestamp}_${randomStr}`;
         const date = new Date();
         const orderNo = `CO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
 
         const auditRecord: ApprovalRecord = {
-          id: `ar_${Date.now()}`,
+          id: `ar_${timestamp}_${randomStr}`,
           action: "submit" as ApprovalAction,
           operator: createdBy,
-          timestamp: Date.now(),
+          timestamp,
           note: "创建变更单",
         };
 
@@ -1107,6 +1109,19 @@ export const useExperimentStore = create<ExperimentState>()(
         const order = state.changeOrders.find((o) => o.id === orderId);
         if (!order || order.status !== "draft") return;
 
+        const hasParamChanges = order.paramChanges.length > 0;
+        const hasChangeReason = order.changeReason.trim().length > 0;
+        const hasOperator = operator.trim().length > 0;
+
+        const hasTempPressureChange = state.hasTemperaturePressureChange(order);
+        const hasRatioChange = state.hasRatioChange(order);
+        const needsTempPressureReason = hasTempPressureChange || hasRatioChange;
+        const hasTempPressureReason = !needsTempPressureReason || order.temperaturePressureChangeReason.trim().length > 0;
+
+        if (!hasParamChanges || !hasChangeReason || !hasOperator || !hasTempPressureReason) {
+          return;
+        }
+
         const auditRecord: ApprovalRecord = {
           id: `ar_${Date.now()}`,
           action: "submit" as ApprovalAction,
@@ -1140,6 +1155,9 @@ export const useExperimentStore = create<ExperimentState>()(
         const state = get();
         const order = state.changeOrders.find((o) => o.id === orderId);
         if (!order || order.status !== "pending") return;
+
+        const hasApprover = approver.trim().length > 0;
+        if (!hasApprover) return;
 
         const auditRecord: ApprovalRecord = {
           id: `ar_${Date.now()}`,
@@ -1180,6 +1198,10 @@ export const useExperimentStore = create<ExperimentState>()(
         const state = get();
         const order = state.changeOrders.find((o) => o.id === orderId);
         if (!order || order.status !== "pending") return;
+
+        const hasApprover = approver.trim().length > 0;
+        const hasNote = note && note.trim().length > 0;
+        if (!hasApprover || !hasNote) return;
 
         const auditRecord: ApprovalRecord = {
           id: `ar_${Date.now()}`,
