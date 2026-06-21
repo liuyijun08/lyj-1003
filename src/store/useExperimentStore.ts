@@ -148,6 +148,7 @@ interface ExperimentState {
   sortOrder: SortOrder;
   lockedParams: Partial<Record<keyof ExperimentParams, boolean>>;
   filterRiskTag: RiskTag | null;
+  searchKeyword: string;
 
   setParam: (key: keyof ExperimentParams, value: number) => void;
   loadPreset: (presetId: string) => void;
@@ -163,6 +164,7 @@ interface ExperimentState {
   toggleAnomalyMarker: (pointIndex: number) => void;
   getSortedResults: () => ExperimentResult[];
   setFilterRiskTag: (tag: RiskTag | null) => void;
+  setSearchKeyword: (keyword: string) => void;
   getFilteredResults: () => ExperimentResult[];
 }
 
@@ -186,6 +188,7 @@ export const useExperimentStore = create<ExperimentState>()(
       sortOrder: "desc",
       lockedParams: {},
       filterRiskTag: null,
+      searchKeyword: "",
 
       setParam: (key, value) => {
         const state = get();
@@ -380,12 +383,30 @@ export const useExperimentStore = create<ExperimentState>()(
         set({ filterRiskTag: tag });
       },
 
+      setSearchKeyword: (keyword) => {
+        set({ searchKeyword: keyword });
+      },
+
       getFilteredResults: () => {
         const state = get();
-        const filtered = state.filterRiskTag
-          ? state.savedResults.filter((r) => r.riskTag === state.filterRiskTag)
-          : state.savedResults;
-        return [...filtered].sort((a, b) => {
+        const keyword = state.searchKeyword.trim().toLowerCase();
+
+        let results = state.savedResults;
+
+        if (state.filterRiskTag) {
+          results = results.filter((r) => r.riskTag === state.filterRiskTag);
+        }
+
+        if (keyword) {
+          results = results.filter((r) => {
+            const nameMatch = r.name.toLowerCase().includes(keyword);
+            const batchMatch = (r.batch || "").toLowerCase().includes(keyword);
+            const purposeMatch = (r.purpose || "").toLowerCase().includes(keyword);
+            return nameMatch || batchMatch || purposeMatch;
+          });
+        }
+
+        return [...results].sort((a, b) => {
           const order = state.sortOrder === "desc" ? -1 : 1;
           return (a[state.sortField] - b[state.sortField]) * order;
         });
@@ -393,10 +414,34 @@ export const useExperimentStore = create<ExperimentState>()(
     }),
     {
       name: "experiment-storage",
+      version: 1,
+      migrate: (persistedState, version) => {
+        const state = persistedState as {
+          savedResults?: ExperimentResult[];
+          comparisonIds?: string[];
+          filterRiskTag?: RiskTag | null;
+          searchKeyword?: string;
+        };
+        if (version < 1 && state.savedResults) {
+          state.savedResults = state.savedResults.map((r) => ({
+            ...r,
+            batch: (r as { batch?: string }).batch || "",
+            purpose: (r as { purpose?: string }).purpose || "",
+            riskTag: (r as { riskTag?: RiskTag }).riskTag || "medium",
+          }));
+        }
+        return state as {
+          savedResults: ExperimentResult[];
+          comparisonIds: string[];
+          filterRiskTag: RiskTag | null;
+          searchKeyword: string;
+        };
+      },
       partialize: (state) => ({
         savedResults: state.savedResults,
         comparisonIds: state.comparisonIds,
         filterRiskTag: state.filterRiskTag,
+        searchKeyword: state.searchKeyword,
       }),
     }
   )

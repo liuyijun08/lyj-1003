@@ -1,4 +1,4 @@
-import { Trophy, ArrowUpDown, Trash2, X, Layers, Filter } from "lucide-react";
+import { Trophy, ArrowUpDown, Trash2, X, Layers, Filter, Search } from "lucide-react";
 import { RankingItem } from "./RankingItem";
 import type { SortField, RiskTag } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
@@ -30,6 +30,8 @@ export function RankingList() {
     clearComparison,
     filterRiskTag,
     setFilterRiskTag,
+    searchKeyword,
+    setSearchKeyword,
   } = useExperimentStore();
 
   const filteredResults = getFilteredResults();
@@ -76,6 +78,33 @@ export function RankingList() {
           >
             <ArrowUpDown size={14} className={sortOrder === "asc" ? "rotate-180" : ""} />
           </button>
+        </div>
+
+        <div className="relative mb-3">
+          <Search
+            size={14}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-lab-text-muted pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            placeholder="搜索名称、批次、目的..."
+            className="w-full pl-8 pr-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
+                       text-lab-text text-sm placeholder:text-lab-text-muted
+                       focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
+                       transition-colors"
+          />
+          {searchKeyword && (
+            <button
+              onClick={() => setSearchKeyword("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
+                         text-lab-text-muted hover:text-lab-text transition-colors"
+              title="清除搜索"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -126,10 +155,18 @@ export function RankingList() {
               <Trophy size={28} className="text-lab-text-muted" />
             </div>
             <p className="text-sm text-lab-text-dim mb-1">
-              {filterRiskTag ? "该标签下暂无方案" : "暂无保存的方案"}
+              {searchKeyword
+                ? "未找到匹配的方案"
+                : filterRiskTag
+                  ? "该标签下暂无方案"
+                  : "暂无保存的方案"}
             </p>
             <p className="text-xs text-lab-text-muted">
-              {filterRiskTag ? "尝试切换其他标签筛选" : "调节参数后点击\"保存方案\""}
+              {searchKeyword
+                ? "尝试其他关键词或清除搜索"
+                : filterRiskTag
+                  ? "尝试切换其他标签筛选"
+                  : "调节参数后点击\"保存方案\""}
             </p>
           </div>
         ) : (
@@ -142,7 +179,9 @@ export function RankingList() {
       </div>
 
       <div className="px-4 py-2 border-t border-lab-border text-xs text-lab-text-muted text-center">
-        {filterRiskTag ? `筛选结果 ${filteredResults.length} 个` : `共 ${filteredResults.length} 个方案`}
+        {searchKeyword || filterRiskTag
+          ? `筛选结果 ${filteredResults.length} 个`
+          : `共 ${filteredResults.length} 个方案`}
       </div>
     </div>
   );
