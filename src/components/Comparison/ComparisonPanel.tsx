@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Layers, X, Table2, LayoutList, Trophy, AlertTriangle, CheckCircle, XCircle, Clock, TrendingUp, Minus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Layers, X, Table2, LayoutList, Trophy, AlertTriangle, CheckCircle, XCircle, Clock, TrendingUp, Minus, Sparkles } from "lucide-react";
 import { useExperimentStore } from "@/store/useExperimentStore";
 import type { RiskTag, ApprovalStatus } from "@/types";
 
@@ -28,9 +28,21 @@ type ViewMode = "tags" | "matrix";
 export function ComparisonPanel() {
   const { savedResults, comparisonIds, toggleComparison, clearComparison } = useExperimentStore();
   const [viewMode, setViewMode] = useState<ViewMode>("tags");
+  const [prevCount, setPrevCount] = useState(0);
   const comparisonResults = savedResults.filter((r) => comparisonIds.includes(r.id));
+  const count = comparisonResults.length;
 
-  if (comparisonResults.length === 0) return null;
+  useEffect(() => {
+    if (count >= 2 && prevCount < 2) {
+      setViewMode("matrix");
+    }
+    if (count === 1 && prevCount >= 2) {
+      setViewMode("tags");
+    }
+    setPrevCount(count);
+  }, [count, prevCount]);
+
+  if (count === 0) return null;
 
   const maxScore = Math.max(...comparisonResults.map((r) => r.score));
   const minScore = Math.min(...comparisonResults.map((r) => r.score));
@@ -65,33 +77,43 @@ export function ComparisonPanel() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Layers size={16} className="text-lab-cyan" />
-          <h3 className="text-sm font-semibold text-lab-text">批量对比</h3>
-          <span className="text-xs text-lab-text-muted">({comparisonResults.length})</span>
+          <h3 className="text-sm font-semibold text-lab-text">
+            {viewMode === "matrix" && count >= 2 ? "审批差异矩阵" : "批量对比"}
+          </h3>
+          <span className="text-xs text-lab-text-muted">({count})</span>
+          {viewMode === "matrix" && count >= 2 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-lab-cyan/15 text-lab-cyan border border-lab-cyan/30 flex items-center gap-1">
+              <Sparkles size={9} />
+              差异对比
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {comparisonResults.length >= 2 && (
+          {count >= 2 && (
             <div className="flex bg-lab-panel-light rounded border border-lab-border overflow-hidden">
               <button
                 onClick={() => setViewMode("tags")}
                 className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${
                   viewMode === "tags"
-                    ? "bg-lab-cyan/20 text-lab-cyan"
+                    ? "bg-lab-cyan/20 text-lab-cyan font-medium"
                     : "text-lab-text-muted hover:text-lab-text-dim"
                 }`}
                 title="标签视图"
               >
                 <LayoutList size={12} />
+                <span>标签</span>
               </button>
               <button
                 onClick={() => setViewMode("matrix")}
                 className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${
                   viewMode === "matrix"
-                    ? "bg-lab-cyan/20 text-lab-cyan"
+                    ? "bg-lab-cyan/20 text-lab-cyan font-medium"
                     : "text-lab-text-muted hover:text-lab-text-dim"
                 }`}
                 title="审批差异矩阵"
               >
                 <Table2 size={12} />
+                <span>差异矩阵</span>
               </button>
             </div>
           )}
@@ -106,26 +128,54 @@ export function ComparisonPanel() {
       </div>
 
       {viewMode === "tags" ? (
-        <div className="flex flex-wrap gap-2">
-          {comparisonResults.map((result) => (
+        <div>
+          {count >= 2 && (
             <div
-              key={result.id}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border"
+              className="mb-2.5 px-2.5 py-2 rounded-lg bg-lab-cyan/8 border border-lab-cyan/25 cursor-pointer hover:bg-lab-cyan/12 transition-colors group"
+              onClick={() => setViewMode("matrix")}
             >
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: result.color, boxShadow: `0 0 6px ${result.color}60` }}
-              />
-              <span className="text-xs text-lab-text">{result.name}</span>
-              <span className="text-xs font-mono text-lab-cyan">{result.score}</span>
-              <button
-                onClick={() => toggleComparison(result.id)}
-                className="p-0.5 rounded text-lab-text-muted hover:text-lab-text transition-colors"
-              >
-                <X size={12} />
-              </button>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Table2 size={12} className="text-lab-cyan" />
+                  <span className="text-xs text-lab-cyan font-medium">
+                    已选 {count} 个方案，点击查看审批差异矩阵
+                  </span>
+                </div>
+                <span className="text-[10px] text-lab-cyan/70 group-hover:text-lab-cyan flex items-center gap-0.5">
+                  进入 <Sparkles size={9} />
+                </span>
+              </div>
             </div>
-          ))}
+          )}
+          <div className="flex flex-wrap gap-2">
+            {comparisonResults.map((result) => (
+              <div
+                key={result.id}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border"
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: result.color, boxShadow: `0 0 6px ${result.color}60` }}
+                />
+                <span className="text-xs text-lab-text">{result.name}</span>
+                <span className="text-xs font-mono text-lab-cyan">{result.score}</span>
+                <button
+                  onClick={() => toggleComparison(result.id)}
+                  className="p-0.5 rounded text-lab-text-muted hover:text-lab-text transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {count === 1 && (
+            <div className="mt-2.5 px-2.5 py-1.5 rounded bg-lab-amber/8 border border-lab-amber/20">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle size={11} className="text-lab-amber" />
+                <span className="text-[11px] text-lab-amber">再选 1 个方案即可开启审批差异矩阵视图</span>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto">
