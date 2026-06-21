@@ -765,7 +765,7 @@ describe("实验变更单审批流程测试", () => {
       const { result1 } = setupTestData();
 
       let orderId: string;
-      let baseTime = 1000;
+      const baseTime = 1000;
 
       vi.useFakeTimers();
       vi.setSystemTime(baseTime);
