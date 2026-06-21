@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
-import { Activity, AlertTriangle, Eye, EyeOff, Info } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { Activity, AlertTriangle, Eye, EyeOff, Info, Clock } from "lucide-react";
 import type { CurvePoint } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 import { getAnomalyNote } from "@/utils/anomalyDetector";
+import { AnomalyReviewDialog } from "./AnomalyReviewDialog";
 
 interface ChartDimensions {
   width: number;
@@ -57,12 +58,18 @@ export function ExperimentChart() {
     savedResults,
     comparisonIds,
     toggleAnomalyMarker,
+    getUnreviewedCount,
     params,
   } = useExperimentStore();
 
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; point: CurvePoint; index: number } | null>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [showAnomalies, setShowAnomalies] = useState(true);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState<CurvePoint | null>(null);
+  const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
+
+  const unreviewedCount = getUnreviewedCount();
 
   const dims = DEFAULT_DIMS;
   const comparisonResults = useMemo(
@@ -86,8 +93,30 @@ export function ExperimentChart() {
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
+  const getAnomalyColor = useCallback((point: CurvePoint) => {
+    if (!point.review) return "#ffb300";
+    switch (point.review.status) {
+      case "confirmed":
+        return "#ef4444";
+      case "rejected":
+        return "#94a3b8";
+      case "fixed":
+        return "#22c55e";
+      case "pending":
+      default:
+        return "#ffb300";
+    }
+  }, []);
+
   const handlePointClick = (index: number) => {
-    toggleAnomalyMarker(index);
+    const point = currentCurve[index];
+    if (point?.isAnomaly) {
+      setSelectedPoint(point);
+      setSelectedPointIndex(index);
+      setReviewDialogOpen(true);
+    } else {
+      toggleAnomalyMarker(index);
+    }
   };
 
   return (
@@ -277,7 +306,8 @@ export function ExperimentChart() {
           {currentCurve.map((point, i) => {
             const x = padding.left + (point.x / maxX) * chartW;
             const y = padding.top + chartH - (point.y / maxY) * chartH;
-            const isAnomaly = currentAnomalies.includes(i);
+            const isAnomaly = currentAnomalies.includes(i) || point.isAnomaly;
+            const anomalyColor = getAnomalyColor(point);
 
             return (
               <g key={i}>
@@ -285,11 +315,11 @@ export function ExperimentChart() {
                   cx={x}
                   cy={y}
                   r={isAnomaly && showAnomalies ? 6 : 2.5}
-                  fill={isAnomaly && showAnomalies ? "#ffb300" : "#00e5ff"}
-                  stroke={isAnomaly && showAnomalies ? "#ffb300" : "none"}
+                  fill={isAnomaly && showAnomalies ? anomalyColor : "#00e5ff"}
+                  stroke={isAnomaly && showAnomalies ? anomalyColor : "none"}
                   strokeWidth={isAnomaly && showAnomalies ? 2 : 0}
                   fillOpacity={isAnomaly ? 1 : 0}
-                  className={isAnomaly && showAnomalies ? "animate-pulse-slow" : ""}
+                  className={isAnomaly && showAnomalies && (!point.review || point.review.status === "pending") ? "animate-pulse-slow" : ""}
                   style={{ cursor: "pointer" }}
                   onClick={() => handlePointClick(i)}
                   onMouseEnter={() =>
@@ -297,13 +327,13 @@ export function ExperimentChart() {
                   }
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
-                {isAnomaly && showAnomalies && (
+                {isAnomaly && showAnomalies && (!point.review || point.review.status === "pending") && (
                   <circle
                     cx={x}
                     cy={y}
                     r="10"
                     fill="none"
-                    stroke="#ffb300"
+                    stroke={anomalyColor}
                     strokeWidth="1"
                     strokeOpacity="0.4"
                     className="animate-ping-slow"
@@ -353,15 +383,31 @@ export function ExperimentChart() {
               >
                 转化率: {hoveredPoint.point.y.toFixed(1)}%
               </text>
-              {currentAnomalies.includes(hoveredPoint.index) && (
-                <text
-                  x={Math.min(hoveredPoint.x + 18, width - 132)}
-                  y={Math.max(hoveredPoint.y - 6, padding.top + 49)}
-                  fill="#ffb300"
-                  fontSize="10"
-                >
-                  ⚠ {getAnomalyNote(hoveredPoint.index, currentCurve)}
-                </text>
+              {hoveredPoint.point.isAnomaly && (
+                <>
+                  <text
+                    x={Math.min(hoveredPoint.x + 18, width - 132)}
+                    y={Math.max(hoveredPoint.y - 6, padding.top + 49)}
+                    fill={getAnomalyColor(hoveredPoint.point)}
+                    fontSize="10"
+                  >
+                    ⚠ {hoveredPoint.point.anomalyNote || getAnomalyNote(hoveredPoint.index, currentCurve)}
+                  </text>
+                  {hoveredPoint.point.review && (
+                    <text
+                      x={Math.min(hoveredPoint.x + 18, width - 132)}
+                      y={Math.max(hoveredPoint.y + 10, padding.top + 65)}
+                      fill={getAnomalyColor(hoveredPoint.point)}
+                      fontSize="9"
+                    >
+                      状态: {
+                        hoveredPoint.point.review.status === "confirmed" ? "确认异常" :
+                        hoveredPoint.point.review.status === "rejected" ? "误报标记" :
+                        hoveredPoint.point.review.status === "fixed" ? "已修复" : "待复核"
+                      }
+                    </text>
+                  )}
+                </>
               )}
             </g>
           )}
@@ -373,11 +419,35 @@ export function ExperimentChart() {
           <AlertTriangle size={14} className="text-lab-amber flex-shrink-0" />
           <span className="text-lab-text-dim">
             检测到 <span className="text-lab-amber font-semibold">{currentAnomalies.length}</span> 个异常点，
-            点击数据点可手动标记/取消异常标记
+            {unreviewedCount > 0 && (
+              <>
+                其中 <span className="text-lab-red font-semibold">{unreviewedCount}</span> 个待复核，
+              </>
+            )}
+            点击异常点可进行复核，点击正常点可手动标记异常
           </span>
-          <Info size={14} className="text-lab-text-muted ml-auto flex-shrink-0" />
+          {unreviewedCount > 0 && (
+            <span className="text-xs text-lab-red flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-lab-red/10 ml-auto">
+              <Clock size={10} />
+              待复核 {unreviewedCount}
+            </span>
+          )}
+          {unreviewedCount === 0 && currentAnomalies.length > 0 && (
+            <Info size={14} className="text-lab-text-muted ml-auto flex-shrink-0" />
+          )}
         </div>
       )}
+
+      <AnomalyReviewDialog
+        open={reviewDialogOpen}
+        point={selectedPoint}
+        pointIndex={selectedPointIndex}
+        onClose={() => {
+          setReviewDialogOpen(false);
+          setSelectedPoint(null);
+          setSelectedPointIndex(-1);
+        }}
+      />
     </div>
   );
 }

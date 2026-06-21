@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Trash2,
   Copy,
@@ -17,9 +17,10 @@ import {
   Calendar,
   AlertOctagon,
 } from "lucide-react";
-import type { ExperimentResult, RiskTag, ApprovalStatus, Priority } from "@/types";
+import type { ExperimentResult, RiskTag, ApprovalStatus, Priority, CurvePoint } from "@/types";
 import { useExperimentStore, validateRatios } from "@/store/useExperimentStore";
 import { ApprovalDialog } from "./ApprovalDialog";
+import { AnomalyReviewDialog } from "../Chart/AnomalyReviewDialog";
 
 const RISK_TAG_STYLES: Record<RiskTag, { label: string; color: string; bg: string }> = {
   low: { label: "低风险", color: "text-lab-green", bg: "bg-lab-green/10 border-lab-green/30" },
@@ -59,12 +60,19 @@ function isOverdue(ts: number | null): boolean {
 }
 
 export function RankingItem({ result, rank }: RankingItemProps) {
-  const { deleteResult, toggleComparison, comparisonIds } = useExperimentStore();
+  const { deleteResult, toggleComparison, comparisonIds, getUnreviewedCount } = useExperimentStore();
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState<CurvePoint | null>(null);
+  const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
   const isInComparison = comparisonIds.includes(result.id);
   const ratioValidation = validateRatios(result.params);
   const ratioTotal = result.params.ratioA + result.params.ratioB + result.params.ratioC;
   const overdue = result.approvalStatus === "pending" && isOverdue(result.deadline);
+
+  const unreviewedCount = useMemo(() => {
+    return getUnreviewedCount(result.id);
+  }, [result.id, getUnreviewedCount]);
 
   const getRankIcon = () => {
     if (rank === 1) return <Trophy size={16} className="text-lab-amber" />;
@@ -127,13 +135,36 @@ export function RankingItem({ result, rank }: RankingItemProps) {
               {PRIORITY_STYLES[result.priority].label}
             </span>
             {result.anomalyPoints.length > 0 && (
-              <span
-                className="text-xs text-lab-amber flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-lab-amber/10"
-                title={`${result.anomalyPoints.length} 个异常点`}
+              <button
+                onClick={() => {
+                  const firstUnreviewedIndex = result.curveData.findIndex(
+                    (p) => p.isAnomaly && (!p.review || p.review.status === "pending")
+                  );
+                  const targetIndex = firstUnreviewedIndex >= 0 ? firstUnreviewedIndex : result.anomalyPoints[0];
+                  setSelectedPoint(result.curveData[targetIndex]);
+                  setSelectedPointIndex(targetIndex);
+                  setReviewDialogOpen(true);
+                }}
+                className={`text-xs flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors ${
+                  unreviewedCount > 0
+                    ? "text-lab-red bg-lab-red/10 hover:bg-lab-red/20"
+                    : "text-lab-green bg-lab-green/10 hover:bg-lab-green/20"
+                }`}
+                title={
+                  unreviewedCount > 0
+                    ? `${result.anomalyPoints.length} 个异常点，${unreviewedCount} 个待复核，点击查看`
+                    : `${result.anomalyPoints.length} 个异常点，已全部复核，点击查看`
+                }
               >
                 <AlertTriangle size={10} />
                 {result.anomalyPoints.length}
-              </span>
+                {unreviewedCount > 0 && (
+                  <span className="text-[9px] font-medium ml-0.5">({unreviewedCount}待复)</span>
+                )}
+                {unreviewedCount === 0 && result.anomalyPoints.length > 0 && (
+                  <CheckCircle size={9} className="ml-0.5" />
+                )}
+              </button>
             )}
             {overdue && (
               <span
@@ -392,6 +423,18 @@ export function RankingItem({ result, rank }: RankingItemProps) {
         open={approvalDialogOpen}
         result={result}
         onClose={() => setApprovalDialogOpen(false)}
+      />
+
+      <AnomalyReviewDialog
+        open={reviewDialogOpen}
+        point={selectedPoint}
+        pointIndex={selectedPointIndex}
+        resultId={result.id}
+        onClose={() => {
+          setReviewDialogOpen(false);
+          setSelectedPoint(null);
+          setSelectedPointIndex(-1);
+        }}
       />
     </div>
   );

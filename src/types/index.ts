@@ -7,11 +7,21 @@ export interface ExperimentParams {
   ratioC: number;
 }
 
+export type AnomalyReviewStatus = "pending" | "confirmed" | "rejected" | "fixed";
+
+export interface AnomalyReview {
+  status: AnomalyReviewStatus;
+  reason: string;
+  reviewer: string;
+  reviewedAt: number;
+}
+
 export interface CurvePoint {
   x: number;
   y: number;
   isAnomaly?: boolean;
   anomalyNote?: string;
+  review?: AnomalyReview;
 }
 
 export type RiskTag = "low" | "medium" | "high" | "critical";

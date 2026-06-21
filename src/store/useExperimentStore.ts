@@ -9,6 +9,7 @@ import type {
   RiskTag,
   ApprovalStatus,
   Priority,
+  AnomalyReview,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
@@ -170,6 +171,9 @@ interface ExperimentState {
   setSortField: (field: SortField) => void;
   toggleSortOrder: () => void;
   toggleAnomalyMarker: (pointIndex: number) => void;
+  updateAnomalyReview: (pointIndex: number, review: AnomalyReview) => void;
+  updateSavedAnomalyReview: (resultId: string, pointIndex: number, review: AnomalyReview) => void;
+  getUnreviewedCount: (resultId?: string) => number;
   getSortedResults: () => ExperimentResult[];
   setFilterRiskTag: (tag: RiskTag | null) => void;
   setFilterApprovalStatus: (status: ApprovalStatus | null) => void;
@@ -189,9 +193,14 @@ interface ExperimentState {
 }
 
 const defaultParams = PRESETS[0].params;
-const initialCurve = generateCurve(defaultParams);
-const initialMetrics = calculateMetrics(defaultParams, initialCurve);
-const initialAnomalies = detectAnomalies(initialCurve);
+const initialCurveRaw = generateCurve(defaultParams);
+const initialMetrics = calculateMetrics(defaultParams, initialCurveRaw);
+const initialAnomalies = detectAnomalies(initialCurveRaw);
+const initialCurve = initialCurveRaw.map((p, i) => ({
+  ...p,
+  isAnomaly: initialAnomalies.includes(i),
+  anomalyNote: initialAnomalies.includes(i) ? getAnomalyNote(i, initialCurveRaw) : undefined,
+}));
 
 export const useExperimentStore = create<ExperimentState>()(
   persist(
@@ -227,9 +236,27 @@ export const useExperimentStore = create<ExperimentState>()(
         const metrics = calculateMetrics(newParams, curve);
         const anomalies = detectAnomalies(curve);
 
+        const mergedCurve = curve.map((p, i) => {
+          const existing = state.currentCurve[i];
+          const isAnomaly = anomalies.includes(i);
+          if (existing?.review) {
+            return {
+              ...p,
+              isAnomaly,
+              anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+              review: existing.review,
+            };
+          }
+          return {
+            ...p,
+            isAnomaly,
+            anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+          };
+        });
+
         set({
           params: newParams,
-          currentCurve: curve,
+          currentCurve: mergedCurve,
           currentAnomalies: anomalies,
           currentScore: metrics.score,
           currentYield: metrics.yieldRate,
@@ -256,9 +283,27 @@ export const useExperimentStore = create<ExperimentState>()(
         const metrics = calculateMetrics(newParams, curve);
         const anomalies = detectAnomalies(curve);
 
+        const mergedCurve = curve.map((p, i) => {
+          const existing = state.currentCurve[i];
+          const isAnomaly = anomalies.includes(i);
+          if (existing?.review) {
+            return {
+              ...p,
+              isAnomaly,
+              anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+              review: existing.review,
+            };
+          }
+          return {
+            ...p,
+            isAnomaly,
+            anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+          };
+        });
+
         set({
           params: newParams,
-          currentCurve: curve,
+          currentCurve: mergedCurve,
           currentAnomalies: anomalies,
           currentScore: metrics.score,
           currentYield: metrics.yieldRate,
@@ -281,8 +326,26 @@ export const useExperimentStore = create<ExperimentState>()(
         const metrics = calculateMetrics(state.params, curve);
         const anomalies = detectAnomalies(curve);
 
+        const mergedCurve = curve.map((p, i) => {
+          const existing = state.currentCurve[i];
+          const isAnomaly = anomalies.includes(i);
+          if (existing?.review) {
+            return {
+              ...p,
+              isAnomaly,
+              anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+              review: existing.review,
+            };
+          }
+          return {
+            ...p,
+            isAnomaly,
+            anomalyNote: isAnomaly ? getAnomalyNote(i, curve) : undefined,
+          };
+        });
+
         set({
-          currentCurve: curve,
+          currentCurve: mergedCurve,
           currentAnomalies: anomalies,
           currentScore: metrics.score,
           currentYield: metrics.yieldRate,
@@ -306,13 +369,17 @@ export const useExperimentStore = create<ExperimentState>()(
         const metrics = needRecalc ? calculateMetrics(savedParams, curve) : null;
         const anomalies = needRecalc ? detectAnomalies(curve) : state.currentAnomalies;
 
-        const curveData = curve.map((p, i) => ({
-          ...p,
-          isAnomaly: anomalies.includes(i),
-          anomalyNote: anomalies.includes(i)
-            ? getAnomalyNote(i, curve)
-            : undefined,
-        }));
+        const curveData = curve.map((p, i) => {
+          const existingPoint = state.currentCurve[i];
+          return {
+            ...p,
+            isAnomaly: anomalies.includes(i),
+            anomalyNote: anomalies.includes(i)
+              ? getAnomalyNote(i, curve)
+              : undefined,
+            review: existingPoint?.review,
+          };
+        });
 
         const result: ExperimentResult = {
           id,
@@ -391,12 +458,64 @@ export const useExperimentStore = create<ExperimentState>()(
       toggleAnomalyMarker: (pointIndex) => {
         set((state) => {
           const exists = state.currentAnomalies.includes(pointIndex);
+          const newAnomalies = exists
+            ? state.currentAnomalies.filter((i) => i !== pointIndex)
+            : [...state.currentAnomalies, pointIndex];
+          const newCurve = state.currentCurve.map((p, i) => {
+            if (i === pointIndex) {
+              const newPoint = { ...p, isAnomaly: !exists };
+              if (exists) {
+                delete newPoint.anomalyNote;
+                delete newPoint.review;
+              } else {
+                newPoint.anomalyNote = getAnomalyNote(pointIndex, state.currentCurve);
+              }
+              return newPoint;
+            }
+            return p;
+          });
           return {
-            currentAnomalies: exists
-              ? state.currentAnomalies.filter((i) => i !== pointIndex)
-              : [...state.currentAnomalies, pointIndex],
+            currentAnomalies: newAnomalies,
+            currentCurve: newCurve,
           };
         });
+      },
+
+      updateAnomalyReview: (pointIndex, review) => {
+        set((state) => ({
+          currentCurve: state.currentCurve.map((p, i) =>
+            i === pointIndex ? { ...p, review } : p
+          ),
+        }));
+      },
+
+      updateSavedAnomalyReview: (resultId, pointIndex, review) => {
+        set((state) => ({
+          savedResults: state.savedResults.map((r) =>
+            r.id === resultId
+              ? {
+                  ...r,
+                  curveData: r.curveData.map((p, i) =>
+                    i === pointIndex ? { ...p, review } : p
+                  ),
+                }
+              : r
+          ),
+        }));
+      },
+
+      getUnreviewedCount: (resultId) => {
+        const state = get();
+        if (resultId) {
+          const result = state.savedResults.find((r) => r.id === resultId);
+          if (!result) return 0;
+          return result.curveData.filter(
+            (p) => p.isAnomaly && (!p.review || p.review.status === "pending")
+          ).length;
+        }
+        return state.currentCurve.filter(
+          (p) => p.isAnomaly && (!p.review || p.review.status === "pending")
+        ).length;
       },
 
       getSortedResults: () => {
@@ -584,7 +703,7 @@ export const useExperimentStore = create<ExperimentState>()(
     }),
     {
       name: "experiment-storage",
-      version: 4,
+      version: 5,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
@@ -594,6 +713,8 @@ export const useExperimentStore = create<ExperimentState>()(
           filterBatches?: string[];
           filterPurposes?: string[];
           searchKeyword?: string;
+          currentCurve?: CurvePoint[];
+          currentAnomalies?: number[];
         };
         if (version < 1 && state.savedResults) {
           state.savedResults = state.savedResults.map((r) => ({
@@ -623,6 +744,21 @@ export const useExperimentStore = create<ExperimentState>()(
             priority: (r as { priority?: Priority }).priority || "normal",
           }));
         }
+        if (version < 5 && state.savedResults) {
+          state.savedResults = state.savedResults.map((r) => ({
+            ...r,
+            curveData: r.curveData.map((p, i) => {
+              const isAnomaly = r.anomalyPoints.includes(i);
+              const existingReview = (p as { review?: unknown }).review as AnomalyReview | undefined;
+              return {
+                ...p,
+                isAnomaly,
+                anomalyNote: isAnomaly ? getAnomalyNote(i, r.curveData) : undefined,
+                review: existingReview,
+              };
+            }),
+          }));
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
@@ -631,6 +767,8 @@ export const useExperimentStore = create<ExperimentState>()(
           filterBatches: string[];
           filterPurposes: string[];
           searchKeyword: string;
+          currentCurve: CurvePoint[];
+          currentAnomalies: number[];
         };
       },
       partialize: (state) => ({
@@ -641,6 +779,8 @@ export const useExperimentStore = create<ExperimentState>()(
         filterBatches: state.filterBatches,
         filterPurposes: state.filterPurposes,
         searchKeyword: state.searchKeyword,
+        currentCurve: state.currentCurve,
+        currentAnomalies: state.currentAnomalies,
       }),
     }
   )
