@@ -3,8 +3,14 @@ import { ControlPanel } from "@/components/ControlPanel/ControlPanel";
 import { ExperimentChart } from "@/components/Chart/ExperimentChart";
 import { RankingList } from "@/components/Ranking/RankingList";
 import { ComparisonPanel } from "@/components/Comparison/ComparisonPanel";
+import { QualityEventLedger } from "@/components/Ledger/QualityEventLedger";
+import { useState } from "react";
+
+type RightPanel = "ranking" | "ledger";
 
 export default function Home() {
+  const [rightPanel, setRightPanel] = useState<RightPanel>("ranking");
+
   return (
     <div className="h-full w-full flex flex-col bg-lab-bg">
       <header className="flex items-center justify-between px-6 py-3 border-b border-lab-border bg-lab-panel/80 backdrop-blur-sm">
@@ -21,6 +27,28 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-4">
+          <div className="flex bg-lab-panel-light rounded-lg border border-lab-border overflow-hidden">
+            <button
+              onClick={() => setRightPanel("ranking")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                rightPanel === "ranking"
+                  ? "bg-lab-cyan/20 text-lab-cyan"
+                  : "text-lab-text-muted hover:text-lab-text-dim"
+              }`}
+            >
+              方案评分榜
+            </button>
+            <button
+              onClick={() => setRightPanel("ledger")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                rightPanel === "ledger"
+                  ? "bg-lab-cyan/20 text-lab-cyan"
+                  : "text-lab-text-muted hover:text-lab-text-dim"
+              }`}
+            >
+              质量事件台账
+            </button>
+          </div>
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border">
             <Zap size={14} className="text-lab-amber" />
             <span className="text-xs text-lab-text-dim">实时模拟中</span>
@@ -37,7 +65,7 @@ export default function Home() {
           <ExperimentChart />
         </div>
 
-        <RankingList />
+        {rightPanel === "ranking" ? <RankingList /> : <QualityEventLedger />}
       </main>
     </div>
   );

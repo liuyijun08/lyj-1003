@@ -62,6 +62,33 @@ export interface Preset {
 export type SortField = "score" | "yieldRate" | "stability" | "createdAt" | "priority" | "deadline";
 export type SortOrder = "asc" | "desc";
 
+export type EventLevel = "minor" | "major" | "critical" | "catastrophic";
+
+export type EventStatus = "open" | "in_progress" | "resolved" | "closed" | "escalated";
+
+export interface QualityEvent {
+  id: string;
+  title: string;
+  sourceResultId: string | null;
+  sourceResultName: string;
+  pointIndex: number;
+  pointX: number;
+  pointY: number;
+  anomalyNote: string;
+  level: EventLevel;
+  reason: string;
+  handler: string;
+  status: EventStatus;
+  createdAt: number;
+  deadline: number | null;
+  resolvedAt: number | null;
+  escalationCount: number;
+  resolutionNote: string;
+  verified: boolean;
+  verifiedBy: string;
+  verifiedAt: number | null;
+}
+
 export interface ParamConfig {
   key: keyof ExperimentParams;
   label: string;

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
-import { Activity, AlertTriangle, Eye, EyeOff, Info, Clock } from "lucide-react";
-import type { CurvePoint } from "@/types";
+import { Activity, AlertTriangle, Eye, EyeOff, Info, Clock, ClipboardList, FileText } from "lucide-react";
+import type { CurvePoint, EventLevel } from "@/types";
 import { useExperimentStore } from "@/store/useExperimentStore";
 import { getAnomalyNote } from "@/utils/anomalyDetector";
 import { AnomalyReviewDialog } from "./AnomalyReviewDialog";
@@ -60,6 +60,7 @@ export function ExperimentChart() {
     toggleAnomalyMarker,
     getUnreviewedCount,
     params,
+    createQualityEvent,
   } = useExperimentStore();
 
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; point: CurvePoint; index: number } | null>(null);
@@ -68,6 +69,10 @@ export function ExperimentChart() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<CurvePoint | null>(null);
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
+  const [eventCreateOpen, setEventCreateOpen] = useState(false);
+  const [eventLevel, setEventLevel] = useState<EventLevel>("major");
+  const [eventReason, setEventReason] = useState("");
+  const [eventHandler, setEventHandler] = useState("");
 
   const unreviewedCount = getUnreviewedCount();
 
@@ -113,10 +118,40 @@ export function ExperimentChart() {
     if (point?.isAnomaly) {
       setSelectedPoint(point);
       setSelectedPointIndex(index);
-      setReviewDialogOpen(true);
+      setEventCreateOpen(true);
     } else {
       toggleAnomalyMarker(index);
     }
+  };
+
+  const handleCreateEvent = () => {
+    if (!selectedPoint) return;
+    const note = selectedPoint.anomalyNote || getAnomalyNote(selectedPointIndex, currentCurve);
+    createQualityEvent({
+      title: `曲线异常 @${selectedPoint.x.toFixed(1)}h`,
+      sourceResultId: null,
+      sourceResultName: "当前实验",
+      pointIndex: selectedPointIndex,
+      pointX: selectedPoint.x,
+      pointY: selectedPoint.y,
+      anomalyNote: note || "",
+      level: eventLevel,
+      reason: eventReason.trim() || note || "",
+      handler: eventHandler.trim(),
+      status: "open",
+      deadline: null,
+    });
+    setEventCreateOpen(false);
+    setEventLevel("major");
+    setEventReason("");
+    setEventHandler("");
+    setSelectedPoint(null);
+    setSelectedPointIndex(-1);
+  };
+
+  const handleOpenReview = () => {
+    setEventCreateOpen(false);
+    setReviewDialogOpen(true);
   };
 
   return (
@@ -424,7 +459,7 @@ export function ExperimentChart() {
                 其中 <span className="text-lab-red font-semibold">{unreviewedCount}</span> 个待复核，
               </>
             )}
-            点击异常点可进行复核，点击正常点可手动标记异常
+            点击异常点可生成质量事件
           </span>
           {unreviewedCount > 0 && (
             <span className="text-xs text-lab-red flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-lab-red/10 ml-auto">
@@ -448,6 +483,136 @@ export function ExperimentChart() {
           setSelectedPointIndex(-1);
         }}
       />
+
+      {eventCreateOpen && selectedPoint && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => {
+            setEventCreateOpen(false);
+            setSelectedPoint(null);
+            setSelectedPointIndex(-1);
+          }}
+        >
+          <div
+            className="w-[440px] max-w-[90vw] max-h-[90vh] overflow-y-auto lab-panel p-6 animate-slide-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-lab-amber/20 flex items-center justify-center">
+                  <ClipboardList size={16} className="text-lab-amber" />
+                </div>
+                <h3 className="text-lg font-semibold text-lab-text">生成质量事件</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setEventCreateOpen(false);
+                  setSelectedPoint(null);
+                  setSelectedPointIndex(-1);
+                }}
+                className="p-1.5 rounded-lg text-lab-text-muted hover:text-lab-text hover:bg-lab-panel-light transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-lab-panel-light border border-lab-border mb-4">
+              <div className="text-xs text-lab-text-muted mb-2">异常点信息</div>
+              <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                <div>
+                  <span className="text-lab-text-muted">时间:</span>
+                  <span className="ml-1 font-mono text-lab-cyan">{selectedPoint.x.toFixed(1)}h</span>
+                </div>
+                <div>
+                  <span className="text-lab-text-muted">转化率:</span>
+                  <span className="ml-1 font-mono text-lab-green">{selectedPoint.y.toFixed(1)}%</span>
+                </div>
+              </div>
+              {selectedPoint.anomalyNote && (
+                <div className="text-xs text-lab-amber bg-lab-amber/10 px-2 py-1 rounded">
+                  ⚠ {selectedPoint.anomalyNote}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-lab-text-muted mb-2 block">事件等级</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {([
+                    { key: "minor" as EventLevel, label: "一般", color: "text-lab-text-dim", bg: "bg-lab-text-dim/10", border: "border-lab-text-dim/30" },
+                    { key: "major" as EventLevel, label: "较大", color: "text-lab-amber", bg: "bg-lab-amber/10", border: "border-lab-amber/30" },
+                    { key: "critical" as EventLevel, label: "重大", color: "text-orange-400", bg: "bg-orange-400/10", border: "border-orange-400/30" },
+                    { key: "catastrophic" as EventLevel, label: "特别重大", color: "text-lab-red", bg: "bg-lab-red/10", border: "border-lab-red/30" },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setEventLevel(opt.key)}
+                      className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${
+                        eventLevel === opt.key
+                          ? `${opt.bg} ${opt.color} ${opt.border} ring-1 ring-current/30`
+                          : "bg-lab-panel-light border-lab-border text-lab-text-dim hover:border-lab-text-muted"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-lab-text-muted mb-1.5 block flex items-center gap-1">
+                  <FileText size={10} />
+                  事件原因
+                </label>
+                <textarea
+                  value={eventReason}
+                  onChange={(e) => setEventReason(e.target.value)}
+                  placeholder="请说明异常原因（可留空，将自动填入检测说明）"
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
+                             text-lab-text text-sm placeholder:text-lab-text-muted
+                             focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
+                             transition-colors resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-lab-text-muted mb-1.5 block flex items-center gap-1">
+                  🧑‍🔧 处置人
+                </label>
+                <input
+                  type="text"
+                  value={eventHandler}
+                  onChange={(e) => setEventHandler(e.target.value)}
+                  placeholder="姓名或工号"
+                  className="w-full px-3 py-2 rounded-lg bg-lab-panel-light border border-lab-border
+                             text-lab-text text-sm placeholder:text-lab-text-muted
+                             focus:outline-none focus:border-lab-cyan/50 focus:ring-1 focus:ring-lab-cyan/30
+                             transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleOpenReview}
+                className="px-4 lab-btn text-xs"
+              >
+                仅复核
+              </button>
+              <button
+                onClick={handleCreateEvent}
+                className="flex-1 lab-btn-success flex items-center justify-center gap-1.5 text-xs"
+              >
+                <ClipboardList size={13} />
+                生成事件
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

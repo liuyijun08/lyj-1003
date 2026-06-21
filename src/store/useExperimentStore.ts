@@ -10,6 +10,9 @@ import type {
   ApprovalStatus,
   Priority,
   AnomalyReview,
+  QualityEvent,
+  EventLevel,
+  EventStatus,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
@@ -190,6 +193,27 @@ interface ExperimentState {
     id: string,
     meta: Partial<Pick<ExperimentResult, "approver" | "deadline" | "priority">>
   ) => void;
+
+  qualityEvents: QualityEvent[];
+  eventFilterLevel: EventLevel | null;
+  eventFilterStatus: EventStatus | null;
+  eventFilterHandler: string;
+  eventSearchKeyword: string;
+  createQualityEvent: (event: Omit<QualityEvent, "id" | "createdAt" | "resolvedAt" | "escalationCount" | "verified" | "verifiedBy" | "verifiedAt" | "resolutionNote">) => void;
+  updateQualityEvent: (id: string, updates: Partial<QualityEvent>) => void;
+  resolveQualityEvent: (id: string, resolutionNote: string) => void;
+  verifyQualityEvent: (id: string, verifiedBy: string) => void;
+  deleteQualityEvent: (id: string) => void;
+  escalateOverdueEvents: () => void;
+  setEventFilterLevel: (level: EventLevel | null) => void;
+  setEventFilterStatus: (status: EventStatus | null) => void;
+  setEventFilterHandler: (handler: string) => void;
+  setEventSearchKeyword: (keyword: string) => void;
+  clearEventFilters: () => void;
+  getFilteredQualityEvents: () => QualityEvent[];
+  getUniqueHandlers: () => string[];
+  getOverdueEventCount: () => number;
+  getEventStats: () => { total: number; open: number; inProgress: number; resolved: number; overdue: number; escalated: number };
 }
 
 const defaultParams = PRESETS[0].params;
@@ -221,6 +245,12 @@ export const useExperimentStore = create<ExperimentState>()(
       filterBatches: [],
       filterPurposes: [],
       searchKeyword: "",
+
+      qualityEvents: [],
+      eventFilterLevel: null,
+      eventFilterStatus: null,
+      eventFilterHandler: "",
+      eventSearchKeyword: "",
 
       setParam: (key, value) => {
         const state = get();
@@ -700,10 +730,166 @@ export const useExperimentStore = create<ExperimentState>()(
           ),
         }));
       },
+
+      createQualityEvent: (event) => {
+        const id = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const newEvent: QualityEvent = {
+          ...event,
+          id,
+          createdAt: Date.now(),
+          resolvedAt: null,
+          escalationCount: 0,
+          verified: false,
+          verifiedBy: "",
+          verifiedAt: null,
+          resolutionNote: "",
+        };
+        set((state) => ({
+          qualityEvents: [newEvent, ...state.qualityEvents],
+        }));
+      },
+
+      updateQualityEvent: (id, updates) => {
+        set((state) => ({
+          qualityEvents: state.qualityEvents.map((e) =>
+            e.id === id ? { ...e, ...updates } : e
+          ),
+        }));
+      },
+
+      resolveQualityEvent: (id, resolutionNote) => {
+        set((state) => ({
+          qualityEvents: state.qualityEvents.map((e) =>
+            e.id === id
+              ? { ...e, status: "resolved" as EventStatus, resolvedAt: Date.now(), resolutionNote }
+              : e
+          ),
+        }));
+      },
+
+      verifyQualityEvent: (id, verifiedBy) => {
+        set((state) => ({
+          qualityEvents: state.qualityEvents.map((e) =>
+            e.id === id
+              ? { ...e, verified: true, verifiedBy, verifiedAt: Date.now(), status: "closed" as EventStatus }
+              : e
+          ),
+        }));
+      },
+
+      deleteQualityEvent: (id) => {
+        set((state) => ({
+          qualityEvents: state.qualityEvents.filter((e) => e.id !== id),
+        }));
+      },
+
+      escalateOverdueEvents: () => {
+        const now = Date.now();
+        const LEVEL_ORDER: EventLevel[] = ["minor", "major", "critical", "catastrophic"];
+        set((state) => ({
+          qualityEvents: state.qualityEvents.map((e) => {
+            if ((e.status === "open" || e.status === "in_progress" || e.status === "escalated") && e.deadline && e.deadline < now) {
+              const currentIdx = LEVEL_ORDER.indexOf(e.level);
+              const nextLevel = currentIdx < LEVEL_ORDER.length - 1 ? LEVEL_ORDER[currentIdx + 1] : e.level;
+              return {
+                ...e,
+                level: nextLevel,
+                status: "escalated" as EventStatus,
+                escalationCount: e.escalationCount + 1,
+              };
+            }
+            return e;
+          }),
+        }));
+      },
+
+      setEventFilterLevel: (level) => {
+        set({ eventFilterLevel: level });
+      },
+
+      setEventFilterStatus: (status) => {
+        set({ eventFilterStatus: status });
+      },
+
+      setEventFilterHandler: (handler) => {
+        set({ eventFilterHandler: handler });
+      },
+
+      setEventSearchKeyword: (keyword) => {
+        set({ eventSearchKeyword: keyword });
+      },
+
+      clearEventFilters: () => {
+        set({
+          eventFilterLevel: null,
+          eventFilterStatus: null,
+          eventFilterHandler: "",
+          eventSearchKeyword: "",
+        });
+      },
+
+      getFilteredQualityEvents: () => {
+        const state = get();
+        let events = state.qualityEvents;
+        if (state.eventFilterLevel) {
+          events = events.filter((e) => e.level === state.eventFilterLevel);
+        }
+        if (state.eventFilterStatus) {
+          events = events.filter((e) => e.status === state.eventFilterStatus);
+        }
+        if (state.eventFilterHandler.trim()) {
+          const handler = state.eventFilterHandler.trim().toLowerCase();
+          events = events.filter((e) => e.handler.toLowerCase().includes(handler));
+        }
+        if (state.eventSearchKeyword.trim()) {
+          const keyword = state.eventSearchKeyword.trim().toLowerCase();
+          events = events.filter((e) =>
+            e.title.toLowerCase().includes(keyword) ||
+            e.reason.toLowerCase().includes(keyword) ||
+            e.handler.toLowerCase().includes(keyword) ||
+            e.sourceResultName.toLowerCase().includes(keyword) ||
+            e.anomalyNote.toLowerCase().includes(keyword)
+          );
+        }
+        return events;
+      },
+
+      getUniqueHandlers: () => {
+        const state = get();
+        const handlers = new Set<string>();
+        state.qualityEvents.forEach((e) => {
+          if (e.handler.trim()) handlers.add(e.handler.trim());
+        });
+        return Array.from(handlers).sort();
+      },
+
+      getOverdueEventCount: () => {
+        const state = get();
+        const now = Date.now();
+        return state.qualityEvents.filter(
+          (e) => (e.status === "open" || e.status === "in_progress" || e.status === "escalated") && e.deadline && e.deadline < now
+        ).length;
+      },
+
+      getEventStats: () => {
+        const state = get();
+        const now = Date.now();
+        const events = state.qualityEvents;
+        return {
+          total: events.length,
+          open: events.filter((e) => e.status === "open").length,
+          inProgress: events.filter((e) => e.status === "in_progress").length,
+          resolved: events.filter((e) => e.status === "resolved" || e.status === "closed").length,
+          overdue: events.filter(
+            (e) => (e.status === "open" || e.status === "in_progress" || e.status === "escalated") && e.deadline && e.deadline < now
+          ).length,
+          escalated: events.filter((e) => e.status === "escalated").length,
+        };
+      },
     }),
     {
       name: "experiment-storage",
-      version: 5,
+      version: 6,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
@@ -759,6 +945,13 @@ export const useExperimentStore = create<ExperimentState>()(
             }),
           }));
         }
+        if (version < 6) {
+          (state as Record<string, unknown>).qualityEvents = [];
+          (state as Record<string, unknown>).eventFilterLevel = null;
+          (state as Record<string, unknown>).eventFilterStatus = null;
+          (state as Record<string, unknown>).eventFilterHandler = "";
+          (state as Record<string, unknown>).eventSearchKeyword = "";
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
@@ -769,6 +962,11 @@ export const useExperimentStore = create<ExperimentState>()(
           searchKeyword: string;
           currentCurve: CurvePoint[];
           currentAnomalies: number[];
+          qualityEvents: QualityEvent[];
+          eventFilterLevel: EventLevel | null;
+          eventFilterStatus: EventStatus | null;
+          eventFilterHandler: string;
+          eventSearchKeyword: string;
         };
       },
       partialize: (state) => ({
@@ -781,6 +979,11 @@ export const useExperimentStore = create<ExperimentState>()(
         searchKeyword: state.searchKeyword,
         currentCurve: state.currentCurve,
         currentAnomalies: state.currentAnomalies,
+        qualityEvents: state.qualityEvents,
+        eventFilterLevel: state.eventFilterLevel,
+        eventFilterStatus: state.eventFilterStatus,
+        eventFilterHandler: state.eventFilterHandler,
+        eventSearchKeyword: state.eventSearchKeyword,
       }),
     }
   )
