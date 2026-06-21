@@ -7,11 +7,48 @@ import { QualityEventLedger } from "@/components/Ledger/QualityEventLedger";
 import { ChangeOrderList } from "@/components/ChangeOrder/ChangeOrderList";
 import { CostAccountingPanel } from "@/components/CostAccounting";
 import { useState } from "react";
+import type { ComponentType } from "react";
 
-type RightPanel = "ranking" | "ledger" | "changeOrder" | "cost";
+type RightPanelKey = "ranking" | "ledger" | "changeOrder" | "cost";
+
+interface RightPanelConfig {
+  key: RightPanelKey;
+  label: string;
+  icon?: ComponentType<{ size?: number | string; className?: string }>;
+  component: ComponentType;
+}
+
+const RIGHT_PANELS: RightPanelConfig[] = [
+  {
+    key: "ranking",
+    label: "方案评分榜",
+    component: RankingList,
+  },
+  {
+    key: "ledger",
+    label: "质量事件台账",
+    component: QualityEventLedger,
+  },
+  {
+    key: "changeOrder",
+    label: "实验变更单",
+    icon: FileText,
+    component: ChangeOrderList,
+  },
+  {
+    key: "cost",
+    label: "成本核算",
+    icon: DollarSign,
+    component: CostAccountingPanel,
+  },
+];
 
 export default function Home() {
-  const [rightPanel, setRightPanel] = useState<RightPanel>("ranking");
+  const [rightPanel, setRightPanel] = useState<RightPanelKey>("ranking");
+
+  const ActivePanelComponent =
+    RIGHT_PANELS.find((p) => p.key === rightPanel)?.component ??
+    RIGHT_PANELS[0].component;
 
   return (
     <div className="h-full w-full flex flex-col bg-lab-bg">
@@ -24,54 +61,32 @@ export default function Home() {
             <h1 className="text-lg font-bold text-lab-text tracking-tight">
               实验曲线调参台
             </h1>
-            <p className="text-xs text-lab-text-muted">Experiment Parameter Tuning Console</p>
+            <p className="text-xs text-lab-text-muted">
+              Experiment Parameter Tuning Console
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
           <div className="flex bg-lab-panel-light rounded-lg border border-lab-border overflow-hidden">
-            <button
-              onClick={() => setRightPanel("ranking")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                rightPanel === "ranking"
-                  ? "bg-lab-cyan/20 text-lab-cyan"
-                  : "text-lab-text-muted hover:text-lab-text-dim"
-              }`}
-            >
-              方案评分榜
-            </button>
-            <button
-              onClick={() => setRightPanel("ledger")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                rightPanel === "ledger"
-                  ? "bg-lab-cyan/20 text-lab-cyan"
-                  : "text-lab-text-muted hover:text-lab-text-dim"
-              }`}
-            >
-              质量事件台账
-            </button>
-            <button
-              onClick={() => setRightPanel("changeOrder")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                rightPanel === "changeOrder"
-                  ? "bg-lab-cyan/20 text-lab-cyan"
-                  : "text-lab-text-muted hover:text-lab-text-dim"
-              }`}
-            >
-              <FileText size={12} />
-              实验变更单
-            </button>
-            <button
-              onClick={() => setRightPanel("cost")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                rightPanel === "cost"
-                  ? "bg-lab-cyan/20 text-lab-cyan"
-                  : "text-lab-text-muted hover:text-lab-text-dim"
-              }`}
-            >
-              <DollarSign size={12} />
-              成本核算
-            </button>
+            {RIGHT_PANELS.map((panel) => {
+              const Icon = panel.icon;
+              const isActive = rightPanel === panel.key;
+              return (
+                <button
+                  key={panel.key}
+                  onClick={() => setRightPanel(panel.key)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    isActive
+                      ? "bg-lab-cyan/20 text-lab-cyan"
+                      : "text-lab-text-muted hover:text-lab-text-dim"
+                  }`}
+                >
+                  {Icon && <Icon size={12} />}
+                  {panel.label}
+                </button>
+              );
+            })}
           </div>
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border">
             <Zap size={14} className="text-lab-amber" />
@@ -89,15 +104,7 @@ export default function Home() {
           <ExperimentChart />
         </div>
 
-        {rightPanel === "ranking" ? (
-          <RankingList />
-        ) : rightPanel === "ledger" ? (
-          <QualityEventLedger />
-        ) : rightPanel === "changeOrder" ? (
-          <ChangeOrderList />
-        ) : (
-          <CostAccountingPanel />
-        )}
+        <ActivePanelComponent />
       </main>
     </div>
   );
