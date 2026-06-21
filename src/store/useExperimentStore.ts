@@ -19,10 +19,20 @@ import type {
   ParamChangeType,
   ApprovalRecord,
   ApprovalAction,
+  EnergyCostConfig,
+  CostCalculationResult,
+  CostBudget,
+  CostSortField,
+  CostSortOrder,
 } from "@/types";
 import { PRESETS, CURVE_COLORS, PARAM_CONFIGS } from "@/data/presets";
 import { generateCurve, calculateMetrics } from "@/utils/curveGenerator";
 import { detectAnomalies, getAnomalyNote } from "@/utils/anomalyDetector";
+import {
+  calculateEnergyCost,
+  DEFAULT_ENERGY_COST_CONFIG,
+  DEFAULT_COST_BUDGET,
+} from "@/utils/costCalculator";
 
 const RATIO_KEYS: (keyof ExperimentParams)[] = ["ratioA", "ratioB", "ratioC"];
 
@@ -244,6 +254,21 @@ interface ExperimentState {
   getChangeOrderStats: () => { total: number; draft: number; pending: number; approved: number; rejected: number };
   hasTemperaturePressureChange: (order: ExperimentChangeOrder) => boolean;
   hasRatioChange: (order: ExperimentChangeOrder) => boolean;
+
+  energyCostConfig: EnergyCostConfig;
+  costBudget: CostBudget;
+  costSortField: CostSortField;
+  costSortOrder: CostSortOrder;
+  costShowOverBudgetOnly: boolean;
+
+  setEnergyCostConfig: (config: Partial<EnergyCostConfig>) => void;
+  setCostBudget: (budget: Partial<CostBudget>) => void;
+  setCostSortField: (field: CostSortField) => void;
+  toggleCostSortOrder: () => void;
+  toggleCostShowOverBudgetOnly: (show: boolean) => void;
+  calculateResultCost: (result: ExperimentResult) => CostCalculationResult;
+  calculateCurrentCost: () => CostCalculationResult;
+  getCostSortedResults: () => Array<ExperimentResult & { cost: CostCalculationResult; overBudget: boolean }>;
 }
 
 const defaultParams = PRESETS[0].params;
@@ -287,6 +312,12 @@ export const useExperimentStore = create<ExperimentState>()(
       changeOrderFilterStatus: null,
       changeOrderFilterPriority: null,
       changeOrderSearchKeyword: "",
+
+      energyCostConfig: { ...DEFAULT_ENERGY_COST_CONFIG },
+      costBudget: { ...DEFAULT_COST_BUDGET },
+      costSortField: "totalCost",
+      costSortOrder: "desc",
+      costShowOverBudgetOnly: false,
 
       setParam: (key, value) => {
         const state = get();
@@ -1253,10 +1284,83 @@ export const useExperimentStore = create<ExperimentState>()(
           rejected: orders.filter((o) => o.status === "rejected").length,
         };
       },
+
+      setEnergyCostConfig: (config) => {
+        set((state) => ({
+          energyCostConfig: { ...state.energyCostConfig, ...config },
+        }));
+      },
+
+      setCostBudget: (budget) => {
+        set((state) => ({
+          costBudget: { ...state.costBudget, ...budget },
+        }));
+      },
+
+      setCostSortField: (field) => {
+        set({ costSortField: field });
+      },
+
+      toggleCostSortOrder: () => {
+        set((state) => ({
+          costSortOrder: state.costSortOrder === "desc" ? "asc" : "desc",
+        }));
+      },
+
+      toggleCostShowOverBudgetOnly: (show) => {
+        set({ costShowOverBudgetOnly: show });
+      },
+
+      calculateResultCost: (result) => {
+        const state = get();
+        return calculateEnergyCost(result.params, state.energyCostConfig);
+      },
+
+      calculateCurrentCost: () => {
+        const state = get();
+        return calculateEnergyCost(state.params, state.energyCostConfig);
+      },
+
+      getCostSortedResults: () => {
+        const state = get();
+        const results = state.savedResults;
+        const budget = state.costBudget;
+        const config = state.energyCostConfig;
+
+        const withCost = results.map((r) => {
+          const cost = calculateEnergyCost(r.params, config);
+          const overBudget =
+            cost.electricityCost > budget.electricityBudget ||
+            cost.carbonEmission > budget.carbonBudget ||
+            cost.totalCost > budget.totalBudget;
+          return { ...r, cost, overBudget };
+        });
+
+        let filtered = withCost;
+        if (state.costShowOverBudgetOnly) {
+          filtered = withCost.filter((r) => r.overBudget);
+        }
+
+        const order = state.costSortOrder === "desc" ? -1 : 1;
+        const sortField = state.costSortField;
+
+        return [...filtered].sort((a, b) => {
+          if (sortField === "score") {
+            return (a.score - b.score) * order;
+          }
+          if (sortField === "electricityCost") {
+            return (a.cost.electricityCost - b.cost.electricityCost) * order;
+          }
+          if (sortField === "carbonEmission") {
+            return (a.cost.carbonEmission - b.cost.carbonEmission) * order;
+          }
+          return (a.cost.totalCost - b.cost.totalCost) * order;
+        });
+      },
     }),
     {
       name: "experiment-storage",
-      version: 7,
+      version: 8,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
@@ -1331,6 +1435,13 @@ export const useExperimentStore = create<ExperimentState>()(
           (state as Record<string, unknown>).changeOrderFilterPriority = null;
           (state as Record<string, unknown>).changeOrderSearchKeyword = "";
         }
+        if (version < 8) {
+          (state as Record<string, unknown>).energyCostConfig = { ...DEFAULT_ENERGY_COST_CONFIG };
+          (state as Record<string, unknown>).costBudget = { ...DEFAULT_COST_BUDGET };
+          (state as Record<string, unknown>).costSortField = "totalCost";
+          (state as Record<string, unknown>).costSortOrder = "desc";
+          (state as Record<string, unknown>).costShowOverBudgetOnly = false;
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
@@ -1351,6 +1462,11 @@ export const useExperimentStore = create<ExperimentState>()(
           changeOrderFilterStatus: ChangeOrderStatus | null;
           changeOrderFilterPriority: Priority | null;
           changeOrderSearchKeyword: string;
+          energyCostConfig: EnergyCostConfig;
+          costBudget: CostBudget;
+          costSortField: CostSortField;
+          costSortOrder: CostSortOrder;
+          costShowOverBudgetOnly: boolean;
         };
       },
       partialize: (state) => ({
@@ -1373,6 +1489,11 @@ export const useExperimentStore = create<ExperimentState>()(
         changeOrderFilterStatus: state.changeOrderFilterStatus,
         changeOrderFilterPriority: state.changeOrderFilterPriority,
         changeOrderSearchKeyword: state.changeOrderSearchKeyword,
+        energyCostConfig: state.energyCostConfig,
+        costBudget: state.costBudget,
+        costSortField: state.costSortField,
+        costSortOrder: state.costSortOrder,
+        costShowOverBudgetOnly: state.costShowOverBudgetOnly,
       }),
     }
   )

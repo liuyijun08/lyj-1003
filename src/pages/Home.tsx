@@ -1,13 +1,14 @@
-import { Beaker, Zap, FileText } from "lucide-react";
+import { Beaker, Zap, FileText, DollarSign } from "lucide-react";
 import { ControlPanel } from "@/components/ControlPanel/ControlPanel";
 import { ExperimentChart } from "@/components/Chart/ExperimentChart";
 import { RankingList } from "@/components/Ranking/RankingList";
 import { ComparisonPanel } from "@/components/Comparison/ComparisonPanel";
 import { QualityEventLedger } from "@/components/Ledger/QualityEventLedger";
 import { ChangeOrderList } from "@/components/ChangeOrder/ChangeOrderList";
+import { CostAccountingPanel } from "@/components/CostAccounting";
 import { useState } from "react";
 
-type RightPanel = "ranking" | "ledger" | "changeOrder";
+type RightPanel = "ranking" | "ledger" | "changeOrder" | "cost";
 
 export default function Home() {
   const [rightPanel, setRightPanel] = useState<RightPanel>("ranking");
@@ -60,6 +61,17 @@ export default function Home() {
               <FileText size={12} />
               实验变更单
             </button>
+            <button
+              onClick={() => setRightPanel("cost")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+                rightPanel === "cost"
+                  ? "bg-lab-cyan/20 text-lab-cyan"
+                  : "text-lab-text-muted hover:text-lab-text-dim"
+              }`}
+            >
+              <DollarSign size={12} />
+              成本核算
+            </button>
           </div>
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-lab-panel-light border border-lab-border">
             <Zap size={14} className="text-lab-amber" />
@@ -81,8 +93,10 @@ export default function Home() {
           <RankingList />
         ) : rightPanel === "ledger" ? (
           <QualityEventLedger />
-        ) : (
+        ) : rightPanel === "changeOrder" ? (
           <ChangeOrderList />
+        ) : (
+          <CostAccountingPanel />
         )}
       </main>
     </div>

@@ -141,3 +141,28 @@ export interface ExperimentChangeOrder {
   auditTrail: ApprovalRecord[];
   priority: Priority;
 }
+
+export interface EnergyCostConfig {
+  electricityPrice: number;
+  carbonFactor: number;
+  basePower: number;
+  tempPowerCoefficient: number;
+  pressurePowerCoefficient: number;
+}
+
+export interface CostCalculationResult {
+  electricityConsumption: number;
+  electricityCost: number;
+  carbonEmission: number;
+  carbonCost: number;
+  totalCost: number;
+}
+
+export interface CostBudget {
+  electricityBudget: number;
+  carbonBudget: number;
+  totalBudget: number;
+}
+
+export type CostSortField = "electricityCost" | "carbonEmission" | "totalCost" | "score";
+export type CostSortOrder = "asc" | "desc";
