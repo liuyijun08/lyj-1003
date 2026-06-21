@@ -150,6 +150,8 @@ interface ExperimentState {
   lockedParams: Partial<Record<keyof ExperimentParams, boolean>>;
   filterRiskTag: RiskTag | null;
   filterApprovalStatus: ApprovalStatus | null;
+  filterBatches: string[];
+  filterPurposes: string[];
   searchKeyword: string;
 
   setParam: (key: keyof ExperimentParams, value: number) => void;
@@ -168,7 +170,12 @@ interface ExperimentState {
   setFilterRiskTag: (tag: RiskTag | null) => void;
   setFilterApprovalStatus: (status: ApprovalStatus | null) => void;
   setSearchKeyword: (keyword: string) => void;
+  toggleFilterBatch: (batch: string) => void;
+  toggleFilterPurpose: (purpose: string) => void;
+  clearAllFilters: () => void;
   getFilteredResults: () => ExperimentResult[];
+  getUniqueBatches: () => string[];
+  getUniquePurposes: () => string[];
   approveResult: (id: string, note?: string) => void;
   rejectResult: (id: string, note?: string) => void;
 }
@@ -194,6 +201,8 @@ export const useExperimentStore = create<ExperimentState>()(
       lockedParams: {},
       filterRiskTag: null,
       filterApprovalStatus: null,
+      filterBatches: [],
+      filterPurposes: [],
       searchKeyword: "",
 
       setParam: (key, value) => {
@@ -399,11 +408,73 @@ export const useExperimentStore = create<ExperimentState>()(
         set({ searchKeyword: keyword });
       },
 
+      toggleFilterBatch: (batch) => {
+        set((state) => {
+          const exists = state.filterBatches.includes(batch);
+          return {
+            filterBatches: exists
+              ? state.filterBatches.filter((b) => b !== batch)
+              : [...state.filterBatches, batch],
+          };
+        });
+      },
+
+      toggleFilterPurpose: (purpose) => {
+        set((state) => {
+          const exists = state.filterPurposes.includes(purpose);
+          return {
+            filterPurposes: exists
+              ? state.filterPurposes.filter((p) => p !== purpose)
+              : [...state.filterPurposes, purpose],
+          };
+        });
+      },
+
+      clearAllFilters: () => {
+        set({
+          filterRiskTag: null,
+          filterApprovalStatus: null,
+          filterBatches: [],
+          filterPurposes: [],
+          searchKeyword: "",
+        });
+      },
+
+      getUniqueBatches: () => {
+        const state = get();
+        const batches = new Set<string>();
+        state.savedResults.forEach((r) => {
+          if (r.batch && r.batch.trim()) {
+            batches.add(r.batch.trim());
+          }
+        });
+        return Array.from(batches).sort();
+      },
+
+      getUniquePurposes: () => {
+        const state = get();
+        const purposes = new Set<string>();
+        state.savedResults.forEach((r) => {
+          if (r.purpose && r.purpose.trim()) {
+            purposes.add(r.purpose.trim());
+          }
+        });
+        return Array.from(purposes).sort();
+      },
+
       getFilteredResults: () => {
         const state = get();
         const keyword = state.searchKeyword.trim().toLowerCase();
 
         let results = state.savedResults;
+
+        if (state.filterBatches.length > 0) {
+          results = results.filter((r) => state.filterBatches.includes(r.batch || ""));
+        }
+
+        if (state.filterPurposes.length > 0) {
+          results = results.filter((r) => state.filterPurposes.includes(r.purpose || ""));
+        }
 
         if (state.filterRiskTag) {
           results = results.filter((r) => r.riskTag === state.filterRiskTag);
@@ -459,13 +530,15 @@ export const useExperimentStore = create<ExperimentState>()(
     }),
     {
       name: "experiment-storage",
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         const state = persistedState as {
           savedResults?: ExperimentResult[];
           comparisonIds?: string[];
           filterRiskTag?: RiskTag | null;
           filterApprovalStatus?: ApprovalStatus | null;
+          filterBatches?: string[];
+          filterPurposes?: string[];
           searchKeyword?: string;
         };
         if (version < 1 && state.savedResults) {
@@ -484,11 +557,17 @@ export const useExperimentStore = create<ExperimentState>()(
           }));
           state.filterApprovalStatus = null;
         }
+        if (version < 3) {
+          state.filterBatches = [];
+          state.filterPurposes = [];
+        }
         return state as {
           savedResults: ExperimentResult[];
           comparisonIds: string[];
           filterRiskTag: RiskTag | null;
           filterApprovalStatus: ApprovalStatus | null;
+          filterBatches: string[];
+          filterPurposes: string[];
           searchKeyword: string;
         };
       },
@@ -497,6 +576,8 @@ export const useExperimentStore = create<ExperimentState>()(
         comparisonIds: state.comparisonIds,
         filterRiskTag: state.filterRiskTag,
         filterApprovalStatus: state.filterApprovalStatus,
+        filterBatches: state.filterBatches,
+        filterPurposes: state.filterPurposes,
         searchKeyword: state.searchKeyword,
       }),
     }
