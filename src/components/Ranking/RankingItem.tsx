@@ -1,6 +1,6 @@
-import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal } from "lucide-react";
+import { Trash2, Copy, AlertTriangle, Eye, EyeOff, Trophy, Medal, CheckCircle, XCircle } from "lucide-react";
 import type { ExperimentResult } from "@/types";
-import { useExperimentStore } from "@/store/useExperimentStore";
+import { useExperimentStore, validateRatios } from "@/store/useExperimentStore";
 
 interface RankingItemProps {
   result: ExperimentResult;
@@ -10,6 +10,8 @@ interface RankingItemProps {
 export function RankingItem({ result, rank }: RankingItemProps) {
   const { deleteResult, toggleComparison, comparisonIds } = useExperimentStore();
   const isInComparison = comparisonIds.includes(result.id);
+  const ratioValidation = validateRatios(result.params);
+  const ratioTotal = result.params.ratioA + result.params.ratioB + result.params.ratioC;
 
   const getRankIcon = () => {
     if (rank === 1) return <Trophy size={16} className="text-lab-amber" />;
@@ -96,13 +98,25 @@ export function RankingItem({ result, rank }: RankingItemProps) {
             <div className="flex items-center justify-between text-xs mb-1">
               <span className="text-lab-text-muted font-medium">原料配比</span>
               <span
-                className={`font-mono font-semibold ${
-                  result.params.ratioA + result.params.ratioB + result.params.ratioC > 100
-                    ? "text-lab-red"
-                    : "text-lab-green"
+                className={`font-mono font-semibold flex items-center gap-1 ${
+                  ratioValidation.isValid ? "text-lab-green" : "text-lab-red"
                 }`}
+                title={
+                  ratioValidation.isValid
+                    ? "配比合规"
+                    : !ratioValidation.allPositive
+                      ? "存在负值或零值"
+                      : !ratioValidation.allInRange
+                        ? "配比超出参数范围"
+                        : `总和 ${ratioTotal.toFixed(1)}%，不等于 100%`
+                }
               >
-                合计 {result.params.ratioA + result.params.ratioB + result.params.ratioC}%
+                {ratioValidation.isValid ? (
+                  <CheckCircle size={12} />
+                ) : (
+                  <XCircle size={12} />
+                )}
+                合计 {ratioTotal.toFixed(1)}%
               </span>
             </div>
             <div className="h-4 bg-lab-border rounded-full overflow-hidden flex">

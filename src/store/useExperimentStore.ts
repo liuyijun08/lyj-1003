@@ -16,60 +16,114 @@ function isRatioKey(key: keyof ExperimentParams): boolean {
   return RATIO_KEYS.includes(key);
 }
 
-function clampRatioParams(
+function getRatioMin(key: keyof ExperimentParams): number {
+  const config = PARAM_CONFIGS.find((c) => c.key === key);
+  return config ? config.min : 0;
+}
+
+function getRatioMax(key: keyof ExperimentParams): number {
+  const config = PARAM_CONFIGS.find((c) => c.key === key);
+  return config ? config.max : 100;
+}
+
+function normalizeRatios(
   params: ExperimentParams,
   locked: Partial<Record<keyof ExperimentParams, boolean>>,
-  changedKey: keyof ExperimentParams
+  changedKey?: keyof ExperimentParams
 ): ExperimentParams {
   const result = { ...params };
-  const totalRatio = RATIO_KEYS.reduce((sum, k) => sum + result[k], 0);
 
-  if (totalRatio <= 100) return result;
+  for (const key of RATIO_KEYS) {
+    if (locked[key]) continue;
+    const minVal = getRatioMin(key);
+    const maxVal = getRatioMax(key);
+    result[key] = Math.max(minVal, Math.min(maxVal, result[key]));
+  }
 
-  const unlockedKeys = RATIO_KEYS.filter((k) => k !== changedKey && !locked[k]);
+  for (const key of RATIO_KEYS) {
+    if (result[key] < 0) {
+      result[key] = Math.max(0, getRatioMin(key));
+    }
+  }
+
+  const unlockedKeys = RATIO_KEYS.filter((k) => !locked[k]);
+  const lockedTotal = RATIO_KEYS.filter((k) => locked[k]).reduce((sum, k) => sum + result[k], 0);
 
   if (unlockedKeys.length === 0) {
-    const ratioConfigs = PARAM_CONFIGS.filter((c) => c.key === changedKey)[0];
-    const maxAllowed = 100 - RATIO_KEYS.filter((k) => k !== changedKey).reduce((sum, k) => sum + result[k], 0);
-    result[changedKey] = Math.max(ratioConfigs.min, Math.min(ratioConfigs.max, maxAllowed));
+    if (changedKey && !locked[changedKey]) {
+      const othersTotal = RATIO_KEYS.filter((k) => k !== changedKey).reduce((sum, k) => sum + result[k], 0);
+      const minVal = getRatioMin(changedKey);
+      const maxVal = getRatioMax(changedKey);
+      result[changedKey] = Math.max(minVal, Math.min(maxVal, 100 - othersTotal));
+    }
     return result;
   }
 
-  const lockedTotal = RATIO_KEYS.filter((k) => k === changedKey || locked[k]).reduce(
-    (sum, k) => sum + result[k],
-    0
-  );
-  const remaining = Math.max(0, 100 - lockedTotal);
+  const targetUnlockedTotal = Math.max(0, 100 - lockedTotal);
   const currentUnlockedTotal = unlockedKeys.reduce((sum, k) => sum + result[k], 0);
 
-  if (currentUnlockedTotal > 0 && remaining > 0) {
-    const scale = remaining / currentUnlockedTotal;
-    for (const key of unlockedKeys) {
-      const config = PARAM_CONFIGS.find((c) => c.key === key);
-      if (config) {
-        result[key] = Math.max(config.min, result[key] * scale);
+  if (Math.abs(currentUnlockedTotal - targetUnlockedTotal) > 0.01) {
+    if (currentUnlockedTotal > 0) {
+      const scale = targetUnlockedTotal / currentUnlockedTotal;
+      for (const key of unlockedKeys) {
+        result[key] = result[key] * scale;
+      }
+    } else {
+      const perKey = targetUnlockedTotal / unlockedKeys.length;
+      for (const key of unlockedKeys) {
+        result[key] = perKey;
       }
     }
-  } else if (remaining <= 0) {
-    for (const key of unlockedKeys) {
-      const config = PARAM_CONFIGS.find((c) => c.key === key);
-      if (config) {
-        result[key] = config.min;
-      }
-    }
+  }
+
+  for (const key of unlockedKeys) {
+    const minVal = getRatioMin(key);
+    const maxVal = getRatioMax(key);
+    result[key] = Math.max(minVal, Math.min(maxVal, result[key]));
   }
 
   const finalTotal = RATIO_KEYS.reduce((sum, k) => sum + result[k], 0);
-  if (finalTotal > 100 && unlockedKeys.length > 0) {
-    const excess = finalTotal - 100;
-    const lastKey = unlockedKeys[unlockedKeys.length - 1];
-    const config = PARAM_CONFIGS.find((c) => c.key === lastKey);
-    if (config) {
-      result[lastKey] = Math.max(config.min, result[lastKey] - excess);
+  const diff = 100 - finalTotal;
+  if (Math.abs(diff) > 0.001 && unlockedKeys.length > 0) {
+    let remaining = diff;
+    for (let i = unlockedKeys.length - 1; i >= 0 && Math.abs(remaining) > 0.001; i--) {
+      const key = unlockedKeys[i];
+      const minVal = getRatioMin(key);
+      const maxVal = getRatioMax(key);
+      const canAdd = maxVal - result[key];
+      const canSub = result[key] - minVal;
+      const actual = remaining > 0 ? Math.min(remaining, canAdd) : Math.max(remaining, -canSub);
+      result[key] = result[key] + actual;
+      remaining = remaining - actual;
     }
   }
 
+  for (const key of RATIO_KEYS) {
+    result[key] = Math.round(result[key] * 100) / 100;
+  }
+
   return result;
+}
+
+export function validateRatios(params: ExperimentParams): {
+  isValid: boolean;
+  total: number;
+  allPositive: boolean;
+  allInRange: boolean;
+} {
+  const total = RATIO_KEYS.reduce((sum, k) => sum + params[k], 0);
+  const allPositive = RATIO_KEYS.every((k) => params[k] > 0);
+  const allInRange = RATIO_KEYS.every((k) => {
+    const minVal = getRatioMin(k);
+    const maxVal = getRatioMax(k);
+    return params[k] >= minVal && params[k] <= maxVal;
+  });
+  return {
+    isValid: Math.abs(total - 100) < 0.02 && allPositive && allInRange,
+    total,
+    allPositive,
+    allInRange,
+  };
 }
 
 interface ExperimentState {
@@ -125,7 +179,7 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
     let newParams = { ...state.params, [key]: value };
 
     if (isRatioKey(key)) {
-      newParams = clampRatioParams(newParams, state.lockedParams, key);
+      newParams = normalizeRatios(newParams, state.lockedParams, key);
     }
 
     const curve = generateCurve(newParams);
@@ -155,10 +209,7 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
       }
     }
 
-    const ratioTotal = RATIO_KEYS.reduce((sum, k) => sum + newParams[k], 0);
-    if (ratioTotal > 100) {
-      newParams = clampRatioParams(newParams, state.lockedParams, "ratioA");
-    }
+    newParams = normalizeRatios(newParams, state.lockedParams);
 
     const curve = generateCurve(newParams);
     const metrics = calculateMetrics(newParams, curve);
@@ -203,35 +254,7 @@ export const useExperimentStore = create<ExperimentState>((set, get) => ({
     const id = `exp_${Date.now()}`;
     const colorIndex = state.savedResults.length % CURVE_COLORS.length;
 
-    let savedParams = { ...state.params };
-    const ratioTotal = RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0);
-
-    if (ratioTotal > 100) {
-      savedParams = clampRatioParams(savedParams, state.lockedParams, "ratioA");
-    } else if (ratioTotal < 100) {
-      const diff = 100 - ratioTotal;
-      for (const key of RATIO_KEYS) {
-        if (!state.lockedParams[key]) {
-          const config = PARAM_CONFIGS.find((c) => c.key === key);
-          if (config) {
-            const maxAdd = config.max - savedParams[key];
-            const add = Math.min(maxAdd, diff);
-            savedParams[key] = Math.round((savedParams[key] + add) * 100) / 100;
-            if (Math.abs(RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0) - 100) < 0.01) break;
-          }
-        }
-      }
-    }
-
-    const adjustedRatioTotal = RATIO_KEYS.reduce((sum, k) => sum + savedParams[k], 0);
-    if (Math.abs(adjustedRatioTotal - 100) > 0.01) {
-      const finalDiff = 100 - adjustedRatioTotal;
-      const unlockedRatios = RATIO_KEYS.filter((k) => !state.lockedParams[k]);
-      if (unlockedRatios.length > 0) {
-        const target = unlockedRatios[unlockedRatios.length - 1];
-        savedParams[target] = Math.round((savedParams[target] + finalDiff) * 100) / 100;
-      }
-    }
+    const savedParams = normalizeRatios(state.params, state.lockedParams);
 
     const needRecalc =
       savedParams.ratioA !== state.params.ratioA ||
